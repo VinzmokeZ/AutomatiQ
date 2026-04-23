@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automatiq"
+version = "0.1.0"
+description = "Record browser sessions and reverse-engineer them into scraping scripts."
+requires-python = ">=3.11"
+dependencies = [
+    "instructor~=1.14.5",
+    "litellm~=1.81.13",
+    "pydantic~=2.12.5",
+    "pydantic-pick~=0.2.0",
+    "python-dotenv~=1.2.1",
+    "pyyaml~=6.0.3",
+    "rich>=13.0.0",
+    "zendriver~=0.15.2",
+    "mss~=10.1.0",
+    "numpy~=2.4.0",
+    "imageio-ffmpeg~=0.6.0",
+    "requests~=2.32.5",
+    "curl_cffi~=0.14.0",
+    "beautifulsoup4~=4.14.3",
+    "magika~=1.0.1",
+    "ipython~=9.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=3.6.0",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+automatiq = "automatiq.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["automatiq*"]
+
+[tool.setuptools.package-data]
+"automatiq" = ["data/*.json", "recorder/js/*.js"]
+
+[tool.ruff]
+line-length = 121
+target-version = "py311"
+
+[tool.ruff.lint]
+# E: pycodestyle, F: Pyflakes, I: isort, B: flake8-bugbear, UP: pyupgrade
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["UP042"]
+
+[tool.ruff.format]
+quote-style = "double"

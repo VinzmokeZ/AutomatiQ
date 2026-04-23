@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets
+.env
+
+# Downloaded binaries
+bin/
+
+# Output / workspace artifacts
+output/
+
+# Logs
+*.log
+
+# Ruff cache
+.ruff_cache/
+
+# OS junk
+Thumbs.db
+.DS_Store
+nul
