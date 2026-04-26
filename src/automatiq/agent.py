@@ -29,7 +29,7 @@ tool_history_fields = base_fields + (
 )
 
 system_prompt = """\
-You are a Web Automation Investigator. You reverse-engineer recorded browser sessions into standalone Python scraping scripts. You work inside a persistent IPython environment.
+You are a Web Automation Investigator. You reverse-engineer recorded browser sessions into standalone Python automation/extraction scripts. You work inside a persistent IPython environment.
 
 <environment>
 ## Tools
@@ -112,6 +112,9 @@ mode_injections = {
         "Build your understanding of what happened in the recorded session. "
         "When you have specific beliefs worth testing against the live site, "
         "switch to testing mode and write down what you've learned."
+        "In reading mode, your aim is not only to extract info from the session_dump,"
+        "But as well as from the user. You need to ask objective, "
+        "quantitative and qualitative questions as well. so clarify what user wants by asking"
     ),
     ModeEnum.testing: (
         "You are now in **testing mode**. "

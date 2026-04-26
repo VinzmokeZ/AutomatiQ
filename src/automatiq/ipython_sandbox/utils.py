@@ -170,14 +170,22 @@ def hard_kill_process(process):
     if not process or not process.is_alive():
         return
 
-    logger.warning(f"Executing HARD KILL on PID {process.pid}")
+    logger.debug(f"Executing HARD KILL on PID {process.pid}")
     if sys.platform == "win32":
-        process.kill()
+        try:
+            import subprocess
+
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            process.kill()
     else:
         import signal
 
         try:
-            logger.debug(f"Sending SIGKILL to entire Process Group {os.getpgid(process.pid)}.")
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
         except ProcessLookupError:
             pass

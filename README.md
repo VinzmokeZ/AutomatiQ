@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/automatiq_banner.svg" alt="AutomatiQ" width="600">
+  <img src="https://raw.githubusercontent.com/StoneSteel27/AutomatiQ/main/assets/automatiq_banner.svg" alt="AutomatiQ" width="600">
 </p>
 
 <p align="center">
@@ -14,27 +14,32 @@
 
 # AutomatiQ
 
-> **Alpha (v0.1.0)** => Work in progress. Things will break, change, and improve.
+> **Alpha** — Work in progress. Things will break, change, and improve.
 
-Record a browser session, and an AI agent reverse-engineers it into a standalone Python script.
+Record a browser session, and an AI agent reverse-engineers it into a standalone Python automation/extraction script.
 
 ## Install
 
 ```bash
+pip install automatiq
+```
+
+### Install from source
+
+```bash
 git clone https://github.com/StoneSteel27/AutomatiQ.git
 cd AutomatiQ
-pip install uv
-uv pip install -e .
+pip install -e .
 ```
 
 ### Dev setup
 
 ```bash
-uv pip install -e ".[dev]"
+pip install -e ".[dev]"
 pre-commit install
 ```
 
-This installs `ruff` and `pre-commit` hooks (lint + format on every commit).
+This installs `ruff`, `build`, `twine`, and `pre-commit` hooks (lint + format on every commit).
 
 ## Configuration
 
@@ -68,12 +73,12 @@ GEMINI_API_KEY=your-key-here
 ## Run
 
 ```bash
-# Record a session, then have the agent build a scraper
+# Record a session, then have the agent build an automation script
 automatiq run https://example.com
 
 # Or run each step separately
 automatiq record https://example.com   # just record
-automatiq agent                         # build scraper from last recording
+automatiq agent                         # build automation script from last recording
 ```
 
 CLI flags override config:
@@ -85,7 +90,34 @@ automatiq run https://example.com --model openai/gpt-4o --max-steps 80
 ## What it does
 
 1. **Record:** Opens Chrome, captures your browsing (video, network requests, user actions).
-2. **Agent:** An LLM investigator reads the session dump, experiments in a sandboxed IPython environment, and produces a working scraping script.
+2. **Agent:** An LLM investigator reads the session dump, experiments in a sandboxed IPython environment, and produces a working automation/extraction script.
+
+## Keyboard shortcuts
+
+| Phase | Key | Action |
+|-------|-----|--------|
+| Recording | `Ctrl+C` | Stop recording and save session |
+| Compilation | `Esc` | Skip AI analysis for remaining segments |
+| Compilation | `y` / `n` | Confirm or deny the skip prompt |
+| Agent | `q` | Quit the agent session |
+| Agent | `Esc` | Cancel current LLM call or code execution |
+
+`Ctrl+C` force-quits at any phase.
+
+## CLI options
+
+| Flag | Description |
+|------|-------------|
+| `--model MODEL` | LiteLLM model string for the agent |
+| `--recorder-model MODEL` | Vision model for video-clip analysis |
+| `--base-url URL` | Custom OpenAI-compatible API endpoint |
+| `--max-steps N` | Maximum agent loop iterations (default: 60) |
+| `--sandbox-timeout SEC` | Seconds per IPython cell (default: 60) |
+| `--output-dir PATH` | Root directory for all output (default: ./output) |
+| `--no-banner` | Skip the startup animation |
+| `--verbose` | Show detailed diagnostic output |
+| `-V`, `--version` | Show version |
+| `-h`, `--help` | Show help message |
 
 ## Requirements
 

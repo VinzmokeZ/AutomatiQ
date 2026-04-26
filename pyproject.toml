@@ -4,9 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "automatiq"
-version = "0.1.0"
-description = "Record browser sessions and reverse-engineer them into scraping scripts."
+dynamic = ["version"]
+description = "Record browser sessions and reverse-engineer them into automation scripts."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
+authors = [
+    { name = "Kanishq Vijay", email = "stonesteel27@gmail.com" },
+]
+keywords = ["automation", "data-extraction", "browser-automation", "llm", "agent", "recording", "reverse-engineering"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
 dependencies = [
     "instructor~=1.14.5",
     "litellm~=1.81.13",
@@ -26,14 +45,24 @@ dependencies = [
     "ipython~=9.10.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/StoneSteel27/AutomatiQ"
+Repository = "https://github.com/StoneSteel27/AutomatiQ"
+Issues = "https://github.com/StoneSteel27/AutomatiQ/issues"
+
 [project.optional-dependencies]
 dev = [
     "pre-commit>=3.6.0",
     "ruff>=0.3.0",
+    "build>=0.10.0",
+    "twine>=5.0.0",
 ]
 
 [project.scripts]
 automatiq = "automatiq.__main__:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "automatiq.config.VERSION"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

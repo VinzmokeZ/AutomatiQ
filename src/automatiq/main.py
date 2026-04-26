@@ -1,8 +1,9 @@
 """
 Agent loop — the core interactive session where the LLM investigates a
-recorded browser session and produces a standalone scraping script.
+recorded browser session and produces a standalone automation/extraction script.
 """
 
+import atexit
 import json
 import os
 import sys
@@ -65,6 +66,20 @@ class _CancelRequested(Exception):
 
 _cancel_flag = threading.Event()
 _monitor_active = threading.Event()
+_original_term_attrs = None
+
+
+def _restore_terminal():
+    global _original_term_attrs
+    if _original_term_attrs is not None:
+        try:
+            import termios
+
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, _original_term_attrs)
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+        except Exception:
+            pass
+        _original_term_attrs = None
 
 
 def _start_esc_listener():
@@ -95,6 +110,10 @@ def _start_esc_listener():
             while True:
                 _monitor_active.wait()
                 old = termios.tcgetattr(fd)
+                global _original_term_attrs
+                if _original_term_attrs is None:
+                    _original_term_attrs = termios.tcgetattr(fd)
+                    atexit.register(_restore_terminal)
                 try:
                     tty.setcbreak(fd)
                     while _monitor_active.is_set():
@@ -161,10 +180,17 @@ def run_agent():
         config.ensure_output_dirs()
         init_file_logger(str(config.LOGS_DIR))
 
-    client = instructor.from_litellm(litellm.completion, mode=instructor.Mode.MD_JSON)
+    workspace_dir = config.WORKSPACE_DIR
+    session_dump = workspace_dir / "session_dump"
+    if not session_dump.exists() or not any(session_dump.iterdir()):
+        error(f"No recorded session found at {session_dump}")
+        info("Run 'automatiq record <url>' first, or use 'automatiq run <url>' for one-shot.")
+        sys.exit(1)
 
-    workspace = str(config.WORKSPACE_DIR)
+    workspace = str(workspace_dir)
     os.makedirs(workspace, exist_ok=True)
+
+    client = instructor.from_litellm(litellm.completion, mode=instructor.Mode.MD_JSON)
 
     sandbox = AgentSandbox(
         working_dir=workspace,
@@ -192,6 +218,7 @@ def run_agent():
     mode_switch_notification = ""
     final_script_bounces = 0
     MAX_FINAL_SCRIPT_BOUNCES = 1
+    _first_prompt = True
 
     # --- Guardrails against repetition and stalling ---
     exec_history: list[tuple[str, str, int]] = []
@@ -251,7 +278,46 @@ def run_agent():
 
     try:
         for step in range(config.MAX_AGENT_STEPS):
+            # Check if a background cancel completed — inject system message to agent
+            if sandbox.cancel_result is not None:
+                cr = sandbox._cancel_result
+                sandbox._cancel_result = None
+                if cr == "lost":
+                    agent.add_step(
+                        AgentStep(
+                            role="user",
+                            content=Input(
+                                input=ToolResponse(
+                                    tool_response=(
+                                        "SYSTEM: Execution cancelled by user — process was force-killed. "
+                                        "State lost. Run %restore to recover previous variables."
+                                    )
+                                )
+                            ),
+                        )
+                    )
+                elif cr == "preserved":
+                    agent.add_step(
+                        AgentStep(
+                            role="user",
+                            content=Input(
+                                input=ToolResponse(
+                                    tool_response=(
+                                        "SYSTEM: Execution interrupted by user. State preserved — variables are intact."
+                                    )
+                                )
+                            ),
+                        )
+                    )
+                awaiting_tool_complete = False
+                awaiting_mode_switch = False
+                needs_user_input = True
+                continue
+
             if needs_user_input:
+                if _first_prompt:
+                    info("Type in q to quit · Esc to cancel processing")
+                    _first_prompt = False
                 ip = rich_prompt()
                 if ip.strip().lower() == "q":
                     info("User requested exit.")
@@ -449,8 +515,10 @@ def run_agent():
                     with spinner("Running..."):
                         scr = _run_interruptible(sandbox.execute, script_to_run)
                 except _CancelRequested:
-                    info("Execution cancelled by Esc. Returning to prompt.")
-                    scr = "[Execution cancelled by user]"
+                    sandbox.cancel()
+                    info("Cancelled by Esc. Returning to prompt.")
+                    needs_user_input = True
+                    continue
 
                 # --- Guardrail: if output is identical to a previous cell, just reference it ---
                 output_match_cell = None
@@ -520,11 +588,12 @@ def run_agent():
 
     except KeyboardInterrupt:
         info("Interrupted by user (Ctrl+C). Saving session ...")
+        sandbox.cancel()
 
     except Exception as exc:
-        # Catch-all so we never lose session history to an unexpected crash
         error(f"Unexpected error: {exc}")
         print_exception()
+        sandbox.cancel()
 
     finally:
         _monitor_active.clear()
@@ -533,6 +602,7 @@ def run_agent():
         except Exception as exc:
             error(f"Failed to save session logs: {exc}")
             print_exception()
+        sandbox.close()
 
 
 def _export_session_logs(global_memory, agent):

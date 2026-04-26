@@ -29,7 +29,6 @@ _preload_error = None  # captured if preload raises unexpectedly
 
 
 def _peek_command() -> str:
-    """Return the first positional arg that looks like a sub-command, or ''."""
     for arg in sys.argv[1:]:
         if not arg.startswith("-"):
             return arg
@@ -37,7 +36,6 @@ def _peek_command() -> str:
 
 
 def _peek_model() -> str | None:
-    """Return the value of --model from sys.argv before argparse runs, or None."""
     args = sys.argv[1:]
     for i, arg in enumerate(args):
         if arg == "--model" and i + 1 < len(args):
@@ -48,7 +46,6 @@ def _peek_model() -> str | None:
 
 
 def _peek_base_url() -> str | None:
-    """Return the value of --base-url from sys.argv before argparse runs, or None."""
     args = sys.argv[1:]
     for i, arg in enumerate(args):
         if arg == "--base-url" and i + 1 < len(args):
@@ -71,35 +68,46 @@ def _preload():
 
         cmd = _peek_command()
 
+        _is_verbose = "--verbose" in sys.argv
+
+        if _is_verbose:
+            config.VERBOSE = True
+            import logging
+
+            handler = logging.StreamHandler()
+            handler.setFormatter(
+                logging.Formatter(
+                    "%(asctime)s  %(levelname)-5s  %(name)s  %(message)s",
+                    datefmt="%H:%M:%S",
+                )
+            )
+            logging.getLogger("automatiq").addHandler(handler)
+            logging.getLogger("automatiq").setLevel(logging.DEBUG)
+
         if cmd in ("agent", "run", ""):
-            # Agent deps — always needed for 'agent' and 'run'; also the default.
             import instructor  # noqa: F401
             import IPython  # noqa: F401
             import litellm  # noqa: F401
             import yaml  # noqa: F401
 
-            # Suppress litellm's "Give Feedback / Provider List" banners
-            litellm.suppress_debug_info = True
+            litellm.suppress_debug_info = not _is_verbose
 
         if cmd in ("record", "run"):
-            # Recorder deps — only needed when a browser session will be captured.
             import imageio_ffmpeg  # noqa: F401
             import mss  # noqa: F401
             import numpy  # noqa: F401
             import zendriver  # noqa: F401
 
-            # litellm is used by the recorder's AI analyzer too
             if cmd == "record":
                 import litellm  # noqa: F401
 
-                litellm.suppress_debug_info = True
+                litellm.suppress_debug_info = not _is_verbose
 
     except Exception as exc:
         _preload_error = exc
 
 
 def _apply_config_overrides(args):
-    """Monkey-patch config values from CLI flags before any subcommand logic runs."""
     from . import config
 
     if getattr(args, "model", None):
@@ -119,6 +127,10 @@ def _apply_config_overrides(args):
         config.SANDBOX_TIMEOUT_SECONDS = args.sandbox_timeout
     if getattr(args, "base_url", None):
         config.API_BASE = args.base_url
+    if getattr(args, "no_banner", False):
+        config.BANNER_ENABLED = False
+    if getattr(args, "verbose", False):
+        config.VERBOSE = True
 
 
 def cmd_record(args):
@@ -171,7 +183,111 @@ def cmd_run(args):
     run_agent()
 
 
+# ---------------------------------------------------------------------------
+# Custom Rich help page — replaces argparse's default --help output.
+# ---------------------------------------------------------------------------
+
+
+def _print_rich_help():
+    from rich.table import Table
+    from rich.text import Text
+
+    from . import config
+    from .console import console
+
+    console.print()
+    ver = config.VERSION
+    console.print(
+        f"[bold]AutomatiQ[/bold] [dim]v{ver}[/dim]"
+        " — Record browser sessions and reverse-engineer them"
+        " into automation scripts."
+    )
+    console.print()
+
+    rule("USAGE", style="cyan")
+    console.print("  automatiq <command> [options]")
+    console.print()
+
+    rule("COMMANDS", style="cyan")
+    t = Table(show_header=False, box=None, collapse_padding=True)
+    t.add_column(style="bold", min_width=16)
+    t.add_column()
+    t.add_row("record <url>", "Capture a browser session (screen + network + actions)")
+    t.add_row("agent", "Analyse a recorded workspace and produce an automation script")
+    t.add_row("run <url>", "Record a session then immediately launch the agent")
+    console.print(t)
+    console.print()
+
+    rule("KEYBOARD SHORTCUTS", style="cyan")
+    t2 = Table(show_header=False, box=None, collapse_padding=True)
+    t2.add_column(style="bold", min_width=16)
+    t2.add_column()
+    t2.add_row(Text("RECORDING", style="bold bright_cyan"), "")
+    t2.add_row("  Ctrl+C", "Stop recording and save session")
+    t2.add_row("", "")
+    t2.add_row(Text("COMPILATION", style="bold bright_cyan"), "")
+    t2.add_row("  Esc", "Skip AI analysis for remaining segments")
+    t2.add_row("  y / n", "Confirm or deny the skip prompt")
+    t2.add_row("  Ctrl+C", "Force-quit")
+    t2.add_row("", "")
+    t2.add_row(Text("AGENT", style="bold bright_cyan"), "")
+    t2.add_row("  q", "Quit the agent session")
+    t2.add_row("  Esc", "Cancel current LLM call or code execution")
+    t2.add_row("  Ctrl+C", "Force-quit")
+    console.print(t2)
+    console.print()
+
+    rule("CONFIG", style="cyan")
+    console.print("  [dim]~/.automatiq/config.toml[/dim]")
+    t3 = Table(show_header=False, box=None, collapse_padding=True)
+    t3.add_column(style="bold", min_width=16)
+    t3.add_column()
+    t3.add_row("  models", "LLM model strings and custom API endpoints")
+    t3.add_row("  agent", "Max iterations and sandbox timeouts")
+    t3.add_row("  recording", "Capture FPS, clip padding, and merge thresholds")
+    t3.add_row("  banner", "Startup animation toggle and speed")
+    t3.add_row("  output", "Root directory for all generated output")
+    console.print(t3)
+    console.print()
+
+    rule("OPTIONS", style="cyan")
+    t4 = Table(show_header=False, box=None, collapse_padding=True)
+    t4.add_column(style="bold", min_width=24)
+    t4.add_column()
+    t4.add_row("--model MODEL", f"LiteLLM model string for the agent (default: {config.AGENT_MODEL})")
+    t4.add_row("--recorder-model MODEL", f"Vision model for video-clip analysis (default: {config.RECORDER_AI_MODEL})")
+    t4.add_row("--base-url URL", "Custom OpenAI-compatible API endpoint")
+    t4.add_row("--max-steps N", f"Maximum agent loop iterations (default: {config.MAX_AGENT_STEPS})")
+    t4.add_row("--sandbox-timeout SEC", f"Seconds per IPython cell (default: {config.SANDBOX_TIMEOUT_SECONDS})")
+    t4.add_row("--output-dir PATH", "Root directory for all output (default: ./output)")
+    t4.add_row("--no-banner", "Skip the startup animation")
+    t4.add_row("--verbose", "Show detailed diagnostic output")
+    t4.add_row("-V, --version", "Show version")
+    t4.add_row("-h, --help", "Show this help message")
+    console.print(t4)
+    console.print()
+
+
 def main():
+    # Handle --help / -h before any heavy work.
+    _is_help = any(a in sys.argv for a in ("--help", "-h"))
+    _is_version = any(a in sys.argv for a in ("--version", "-V"))
+
+    if _is_version:
+        from . import config
+
+        print(f"automatiq {config.VERSION}")
+        sys.exit(0)
+
+    if _is_help:
+        _print_rich_help()
+        sys.exit(0)
+
+    # No subcommand and no flag → show help.
+    if len(sys.argv) < 2:
+        _print_rich_help()
+        sys.exit(0)
+
     # Start preloading in the background before the banner begins.
     preload_thread = threading.Thread(target=_preload, daemon=True)
     preload_thread.start()
@@ -179,11 +295,13 @@ def main():
     from . import config
     from .automatiq_banner import show_startup
 
+    cmd = _peek_command()
     banner_model = _peek_model() or config.AGENT_MODEL
     banner_base_url = _peek_base_url()
     if banner_base_url:
         config.API_BASE = banner_base_url
-    if config.BANNER_ENABLED:
+
+    if config.BANNER_ENABLED and cmd in ("record", "agent", "run"):
         show_startup(
             version=config.VERSION,
             model=banner_model,
@@ -191,7 +309,6 @@ def main():
             speed=config.BANNER_SPEED,
         )
 
-    # Wait for preload to finish before parsing args (usually already done).
     preload_thread.join()
 
     if _preload_error is not None:
@@ -200,167 +317,50 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="automatiq",
-        description=(
-            "AutomatiQ — turn any browser session into a ready-to-run scraping script.\n"
-            "\n"
-            "Typical workflows:\n"
-            "  1. One-shot  : automatiq run https://example.com\n"
-            "                 Records your session and immediately hands it to the agent.\n"
-            "\n"
-            "  2. Step-by-step:\n"
-            "     a) automatiq record https://example.com   # capture the session\n"
-            "     b) automatiq agent                        # analyse and generate the script\n"
-            "\n"
-            "Output is written to ./output/ by default (override with --output-dir).\n"
-            "Models and timeouts can be overridden per-run with the flags below."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    # ── Shared flag definitions ───────────────────────────────────────────────
     def _add_common_flags(p, include_recorder_model=False):
-        g = p.add_argument_group("model options")
-        g.add_argument(
-            "--model",
-            metavar="MODEL",
-            help=(
-                "LiteLLM model string for the investigator agent.\n"
-                f"Default: {config.AGENT_MODEL}\n"
-                "Examples: openai/gpt-4o  anthropic/claude-3-5-sonnet  gemini/gemini-2.0-flash"
-            ),
-        )
-        g.add_argument(
-            "--base-url",
-            metavar="URL",
-            help=(
-                "Custom OpenAI-compatible API endpoint (e.g. Ollama, LM Studio, vLLM).\n"
-                "When set, all LLM requests are routed to this URL.\n"
-                "Use with --model openai/<name> (the openai/ prefix is required by litellm).\n"
-                "Example: --base-url http://localhost:11434/v1 --model openai/llama3.2"
-            ),
-        )
+        p.add_argument("--model", metavar="MODEL")
+        p.add_argument("--base-url", metavar="URL")
         if include_recorder_model:
-            g.add_argument(
-                "--recorder-model",
-                metavar="MODEL",
-                help=(
-                    "LiteLLM model string for video-clip analysis during recording.\n"
-                    f"Default: {config.RECORDER_AI_MODEL}\n"
-                    "Use a cheaper/faster vision model here to reduce recording cost."
-                ),
-            )
+            p.add_argument("--recorder-model", metavar="MODEL")
+        p.add_argument("--max-steps", type=int, metavar="N")
+        p.add_argument("--sandbox-timeout", type=int, metavar="SECONDS")
+        p.add_argument("--output-dir", metavar="PATH")
+        p.add_argument("--no-banner", action="store_true", default=False)
+        p.add_argument("--verbose", action="store_true", default=False)
+        p.add_argument("-h", "--help", action="store_true", default=False, dest="help_flag")
+        p.add_argument("-V", "--version", action="store_true", default=False)
 
-        g2 = p.add_argument_group("execution limits")
-        g2.add_argument(
-            "--max-steps",
-            type=int,
-            metavar="N",
-            help=(
-                "Maximum number of agent loop iterations before giving up.\n"
-                f"Default: {config.MAX_AGENT_STEPS}. "
-                "Raise this for complex sites; lower it to cap API spend."
-            ),
-        )
-        g2.add_argument(
-            "--sandbox-timeout",
-            type=int,
-            metavar="SECONDS",
-            help=(
-                "How long (seconds) a single IPython cell is allowed to run.\n"
-                f"Default: {config.SANDBOX_TIMEOUT_SECONDS}. "
-                "Increase for slow sites or heavy scraping jobs."
-            ),
-        )
-
-        g3 = p.add_argument_group("output")
-        g3.add_argument(
-            "--output-dir",
-            metavar="PATH",
-            help=(
-                "Root directory for all generated output (workspace, logs, recordings).\n"
-                f"Default: {config.OUTPUT_DIR}\n"
-                "All sub-paths (workspace/, logs/, blocklist/) are derived from this."
-            ),
-        )
-
-    p_record = subparsers.add_parser(
-        "record",
-        help="Capture a browser session (screen + network + actions).",
-        description=(
-            "Launch a Chrome window and record everything: screen video, network\n"
-            "requests, and user interactions. Press Ctrl+C when you are done browsing\n"
-            "to stop the recording and compile the workspace.\n"
-            "\n"
-            "What gets saved to --output-dir/workspace/session_dump/:\n"
-            "  full_record.mp4     — full screen recording of the session\n"
-            "  requests.json       — all network requests/responses captured via CDP\n"
-            "  actions.json        — timestamped user interactions (clicks, typing, navigation)\n"
-            "  clips/              — per-action video segments analysed by the vision model\n"
-            "  action_analysis/    — structured AI summaries of each clip\n"
-            "\n"
-            "Run 'automatiq agent' afterwards to generate the scraping script."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    p_record.add_argument(
-        "url",
-        nargs="?",
-        default="about:blank",
-        help="URL to open when the browser starts. Default: about:blank",
-    )
+    p_record = subparsers.add_parser("record", add_help=False)
+    p_record.add_argument("url", nargs="?", default="about:blank")
     _add_common_flags(p_record, include_recorder_model=True)
     p_record.set_defaults(func=cmd_record)
 
-    p_agent = subparsers.add_parser(
-        "agent",
-        help="Analyse a recorded workspace and produce a scraping script.",
-        description=(
-            "Read an existing workspace (produced by 'record') and run the\n"
-            "investigator agent. The agent inspects the captured requests, video\n"
-            "analysis, and actions, then iteratively writes and tests Python code\n"
-            "in a sandboxed IPython environment until it produces a working scraper.\n"
-            "\n"
-            "The final script is printed to the terminal and saved to:\n"
-            "  --output-dir/workspace/final_script.py\n"
-            "\n"
-            "Use this command when you want to re-run the agent on a session you\n"
-            "already recorded, or to try a different model without re-recording."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+    p_agent = subparsers.add_parser("agent", add_help=False)
     _add_common_flags(p_agent)
     p_agent.set_defaults(func=cmd_agent)
 
-    p_run = subparsers.add_parser(
-        "run",
-        help="Record a session then immediately launch the agent (one-shot).",
-        description=(
-            "Convenience command that chains 'record' and 'agent' in sequence.\n"
-            "Use this for the typical single-pass workflow:\n"
-            "\n"
-            "  automatiq run https://example.com/products\n"
-            "\n"
-            "The browser opens, you navigate the target site, press Ctrl+C to stop,\n"
-            "and the agent immediately starts analysing and generating the script.\n"
-            "\n"
-            "If the recording step fails the agent will not be launched."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    p_run.add_argument(
-        "url",
-        nargs="?",
-        default="about:blank",
-        help="URL to open when the browser starts. Default: about:blank",
-    )
+    p_run = subparsers.add_parser("run", add_help=False)
+    p_run.add_argument("url", nargs="?", default="about:blank")
     _add_common_flags(p_run, include_recorder_model=True)
     p_run.set_defaults(func=cmd_run)
 
     args = parser.parse_args()
-    if not args.command:
-        parser.print_help()
+
+    if getattr(args, "help_flag", False) or getattr(args, "version", False):
+        if getattr(args, "version", False):
+            print(f"automatiq {config.VERSION}")
+        else:
+            _print_rich_help()
         sys.exit(0)
+
+    if not args.command:
+        _print_rich_help()
+        sys.exit(0)
+
     args.func(args)
 
 

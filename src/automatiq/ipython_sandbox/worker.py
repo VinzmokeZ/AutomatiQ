@@ -184,6 +184,8 @@ def ipython_worker(
 
                 try:
                     result = shell.run_cell(command, cell_id=cell_id)
+                except KeyboardInterrupt:
+                    raise
                 finally:
                     if hasattr(sys.stdout, "flush"):
                         sys.stdout.flush()

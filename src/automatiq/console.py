@@ -145,7 +145,11 @@ def rule(title: str = "", style: str = "dim") -> None:
 
 
 def detail(msg: str) -> None:
-    console.print(f"  [dim]{escape(msg)}[/dim]")
+    _log(logging.DEBUG, msg)
+    from . import config
+
+    if config.VERBOSE:
+        console.print(f"  [dim]{escape(msg)}[/dim]")
 
 
 def print_exception() -> None:

@@ -28,15 +28,16 @@ class AgentSandbox:
         self.interrupt_event = None
         self.process = None
         self._ready = threading.Event()
+        self._executing = threading.Event()
+        self._cancel_flag = threading.Event()
+        self._cancel_result: str | None = None
 
         threading.Thread(target=self._background_start, daemon=True).start()
 
     def _background_start(self):
-        """Called from a daemon thread on first init to avoid blocking the main thread."""
         self.start_process()
 
     def _wait_ready(self):
-        """Block until the worker process is ready. Called lazily before first execute()."""
         self._ready.wait()
 
     def start_process(self) -> None:
@@ -139,30 +140,55 @@ class AgentSandbox:
         with open(self.output_file, "w", encoding="utf-8") as f:
             f.write("")
 
+        original_process = self.process
+        self._cancel_flag.clear()
         self.command_queue.put((cell_id, code))
+        self._executing.set()
         fatal_timeout, timeout_msg = False, ""
 
         try:
             res = self.result_queue.get(timeout=timeout)
-            status, code_exit, ret_val = res["status"], res["exit_code"], res["ret_val"]
-            logger.debug(f"{cell_id} finished naturally with status: {status}")
+
+            # If cancel() flagged a cancel, check if the worker's result is a
+            # KeyboardInterrupt (softkill success) vs something else
+            if self._cancel_flag.is_set():
+                if res.get("ret_val") == "KeyboardInterrupt":
+                    status, code_exit, ret_val = "error", 1, "KeyboardInterrupt"
+                    timeout_msg = "\n[Execution interrupted by user. State preserved.]"
+                    logger.debug(f"{cell_id} — soft interrupt succeeded, state preserved.")
+                else:
+                    status, code_exit, ret_val = "error", 1, "CancelledByUser"
+                    logger.debug(f"{cell_id} — result arrived during cancel.")
+            else:
+                status, code_exit, ret_val = res["status"], res["exit_code"], res["ret_val"]
+                logger.debug(f"{cell_id} finished naturally with status: {status}")
 
         except queue.Empty:
-            logger.warning(f"Soft Timeout ({timeout}s) reached for {cell_id}. Sending interrupt...")
-            interrupt_process(self.process, self.interrupt_event)
+            # Check if the process was replaced by cancel_worker()
+            if self._cancel_flag.is_set() or self.process is not original_process:
+                status, code_exit, ret_val = "error", 1, "CancelledByUser"
+                logger.debug(f"[{cell_id}] — cancelled by user during queue wait.")
+            else:
+                logger.warning(f"Soft Timeout ({timeout}s) reached for {cell_id}. Sending interrupt...")
+                interrupt_process(self.process, self.interrupt_event)
+                try:
+                    res = self.result_queue.get(timeout=1.5)
+                    if self._cancel_flag.is_set() or self.process is not original_process:
+                        status, code_exit, ret_val = "error", 1, "CancelledByUser"
+                    else:
+                        status, code_exit, ret_val = "error", res["exit_code"], res["ret_val"]
+                        timeout_msg = "\n[TIMEOUT: Execution interrupted. State preserved.]"
+                        logger.debug(f"[{cell_id}] successfully interrupted.")
+                except queue.Empty:
+                    if self._cancel_flag.is_set() or self.process is not original_process:
+                        status, code_exit, ret_val = "error", 1, "CancelledByUser"
+                    else:
+                        logger.error(f"Hard Timeout reached for {cell_id}. Process unresponsive. Hard killing...")
+                        self.start_process()
 
-            try:
-                res = self.result_queue.get(timeout=1.5)
-                status, code_exit, ret_val = "error", res["exit_code"], res["ret_val"]
-                timeout_msg = "\n[TIMEOUT: Execution interrupted. State preserved.]"
-                logger.info(f"{cell_id} successfully interrupted.")
-
-            except queue.Empty:
-                logger.error(f"Hard Timeout reached for {cell_id}. Process unresponsive. Hard killing...")
-                self.start_process()
-                status, code_exit, ret_val = "error", 1, ""
-                fatal_timeout = True
-                timeout_msg = f"\n\n[FATAL TIMEOUT: Command exceeded {timeout}s. Process was killed. State lost.]"
+        finally:
+            self._executing.clear()
+            self._cancel_flag.clear()
 
         try:
             with open(self.output_file, encoding="utf-8", errors="replace") as f:
@@ -190,6 +216,64 @@ class AgentSandbox:
             header += "\n💡 HINT: Run `%restore` to recover your previous variables and imports."
 
         return f"{header}\n{formatted_out}" if formatted_out else header
+
+    @property
+    def cancel_result(self) -> str | None:
+        """Result of the most recent cancel(). None if no cancel in progress/completed.
+
+        Values: None (no cancel), "preserved" (softkill worked), "lost" (hardkill needed).
+        """
+        return self._cancel_result
+
+    def cancel(self) -> None:
+        """Non-blocking cancel — sends soft interrupt, then hard-kills after 1s if needed.
+
+        Called when the user presses Esc. Returns immediately so the TUI can return to
+        the prompt. A background daemon thread handles the softkill→hardkill flow:
+
+          1. Send soft interrupt (KeyboardInterrupt in IPython worker)
+          2. Wait 0.5s for the worker to catch it and clear _executing
+          3. If still executing after 0.5s → hard-kill + restart (state lost)
+
+        Sets self._cancel_result to "preserved" or "lost" once the background work
+        completes. Caller can check cancel_result later.
+        """
+        if not self._executing.is_set():
+            self._cancel_result = "preserved"
+            return
+
+        self._cancel_flag.set()
+        self._cancel_result = None
+        logger.debug("Cancel requested — attempting soft interrupt...")
+
+        if not self.process or not self.process.is_alive():
+            self._executing.clear()
+            self._cancel_result = "lost"
+            self.start_process()
+            return
+
+        interrupt_process(self.process, self.interrupt_event)
+
+        threading.Thread(target=self._cancel_worker, daemon=True).start()
+
+    def _cancel_worker(self):
+        """Background thread: wait for softkill, then hard-kill if needed."""
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            if not self._executing.is_set():
+                self._cancel_result = "preserved"
+                logger.debug("Soft interrupt succeeded — state preserved.")
+                return
+            time.sleep(0.05)
+
+        if self._executing.is_set():
+            logger.debug("Soft interrupt didn't unblock execute() — hard-killing.")
+            if self.process and self.process.is_alive():
+                hard_kill_process(self.process)
+                self.process.join(timeout=0.2)
+            self._executing.clear()
+            self._cancel_result = "lost"
+            self.start_process()
 
     def close(self) -> None:
         logger.info("Closing AgentSandbox and cleaning up processes...")

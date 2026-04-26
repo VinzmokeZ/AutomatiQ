@@ -8,6 +8,7 @@ Usage:
 """
 
 import asyncio
+import atexit
 import os
 import shutil
 import signal
@@ -54,6 +55,20 @@ class EscCancelled(Exception):
 _esc_flag = threading.Event()
 _esc_monitor_active = threading.Event()
 _esc_thread_started = False
+_original_term_attrs = None
+
+
+def _restore_terminal():
+    global _original_term_attrs
+    if _original_term_attrs is not None:
+        try:
+            import termios
+
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, _original_term_attrs)
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+        except Exception:
+            pass
+        _original_term_attrs = None
 
 
 def _start_esc_listener():
@@ -87,6 +102,10 @@ def _start_esc_listener():
             while True:
                 _esc_monitor_active.wait()
                 old = termios.tcgetattr(fd)
+                global _original_term_attrs
+                if _original_term_attrs is None:
+                    _original_term_attrs = termios.tcgetattr(fd)
+                    atexit.register(_restore_terminal)
                 try:
                     tty.setcbreak(fd)
                     while _esc_monitor_active.is_set():
@@ -219,6 +238,7 @@ def run_recording(url: str = "about:blank") -> bool:
     info(f"Target URL : {url}")
     info(f"AI Model   : {config.RECORDER_AI_MODEL}")
     info(f"Blocklist  : {blocklist.total_enabled_domains()} domains loaded")
+    info("Press Ctrl+C to stop recording")
     rule(style="bold cyan")
 
     session_data = None

@@ -64,6 +64,8 @@ SANDBOX_TIMEOUT_SECONDS = 60
 BANNER_ENABLED = True
 BANNER_SPEED = 1.0
 
+VERBOSE = False
+
 
 # ── Default config.toml content ─────────────────────────────────────────────
 
