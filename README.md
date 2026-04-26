@@ -8,15 +8,15 @@
 
 <p align="center">
   <a href="https://discord.gg/8j7dFWMMDA">
-    <img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord">
+    <img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord">
   </a>
-  <img src="https://img.shields.io/badge/python-3.11+-blue?style=flat&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat" alt="License">
+  <img src="https://img.shields.io/badge/python-3.11+-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/license-MIT-violet?style=flat-square" alt="License">
 </p>
 
 # AutomatiQ
 
-> **Alpha** — Work in progress. Things will break, change, and improve.
+> **Alpha** — Things will break and change. Read [VISION.md](https://github.com/StoneSteel27/AutomatiQ/blob/main/VISION.md) to understand why Automatiq exists and where it's headed.
 
 AutomatiQ watches you browse, then an AI agent reverse-engineers your session
 into a standalone Python automation/extraction script; no manual inspection needed.
@@ -60,7 +60,7 @@ That's it. Browse the site, press `Ctrl+C`, and the agent takes over.
 ## Keyboard shortcuts
 
 | Phase | Key | Action |
-|-------|-----|--------|
+|:-----:|:---:|:------:|
 | Recording | `Ctrl+C` | Stop recording and save session |
 | Compilation | `Esc` | Skip AI analysis for remaining segments |
 | Compilation | `y` / `n` | Confirm or deny the skip prompt |
