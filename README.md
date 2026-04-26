@@ -10,87 +10,52 @@
   <a href="https://discord.gg/8j7dFWMMDA">
     <img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord">
   </a>
+  <img src="https://img.shields.io/badge/python-3.11+-blue?style=flat&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat" alt="License">
 </p>
 
 # AutomatiQ
 
 > **Alpha** — Work in progress. Things will break, change, and improve.
 
-Record a browser session, and an AI agent reverse-engineers it into a standalone Python automation/extraction script.
+AutomatiQ watches you browse, then an AI agent reverse-engineers your session
+into a standalone Python automation/extraction script — no manual inspection needed.
 
-## Install
+## What it does
+
+```
+1. RECORD          2. COMPILE               3. AGENT
+   Browse a   ──▶   AI analyses video   ──▶   LLM investigates,
+   website          clips & network           writes & tests
+                    requests                  a Python script
+```
+
+1. **Record** — Opens Chrome, captures your browsing (screen video, network
+   requests, user actions). Press `Ctrl+C` when you're done.
+2. **Compile** — Vision AI analyses video clips around each action; network
+   requests are decoded, deduplicated, and structured into a workspace dump.
+3. **Agent** — An LLM investigator reads the workspace, experiments in a
+   sandboxed IPython environment, and iteratively produces a working script.
+
+## Quick start
 
 ```bash
 pip install automatiq
 ```
 
-### Install from source
-
-```bash
-git clone https://github.com/StoneSteel27/AutomatiQ.git
-cd AutomatiQ
-pip install -e .
-```
-
-### Dev setup
-
-```bash
-pip install -e ".[dev]"
-pre-commit install
-```
-
-This installs `ruff`, `build`, `twine`, and `pre-commit` hooks (lint + format on every commit).
-
-## Configuration
-
-On first run, AutomatiQ creates `~/.automatiq/config.toml` with commented defaults. Edit it to override models, timeouts, recording settings, etc.
-
-```toml
-[models]
-agent    = "gemini/gemini-3-flash-preview"
-recorder = "gemini/gemini-3.1-flash-lite-preview"
-# base_url = "http://localhost:11434/v1"   # Ollama / LM Studio / vLLM
-
-[agent]
-max_steps       = 60
-sandbox_timeout = 60
-
-[recording]
-fps                   = 3
-segment_pad           = 2
-merge_gap_threshold   = 1.5
-max_frames_per_prompt = 8
-```
-
-Priority: **CLI flag** > `~/.automatiq/config.toml` > built-in defaults.
-
-Set your API key in a `.env` file at the project root (any [litellm](https://docs.litellm.ai/docs/providers)-supported model works):
+Set your API key (any [litellm](https://docs.litellm.ai/docs/providers)-supported model):
 
 ```
 GEMINI_API_KEY=your-key-here
 ```
 
-## Run
+Run:
 
 ```bash
-# Record a session, then have the agent build an automation script
 automatiq run https://example.com
-
-# Or run each step separately
-automatiq record https://example.com   # just record
-automatiq agent                         # build automation script from last recording
 ```
 
-CLI flags override config:
-
-```bash
-automatiq run https://example.com --model openai/gpt-4o --max-steps 80
-```
-
-## What it does
-
-1. **Record:** Opens Chrome, captures your browsing (video, network requests, user actions).
-2. **Agent:** An LLM investigator reads the session dump, experiments in a sandboxed IPython environment, and produces a working automation/extraction script.
+That's it. Browse the site, press `Ctrl+C`, and the agent takes over.
 
 ## Keyboard shortcuts
 
@@ -119,10 +84,73 @@ automatiq run https://example.com --model openai/gpt-4o --max-steps 80
 | `-V`, `--version` | Show version |
 | `-h`, `--help` | Show help message |
 
+## How it works
+
+- **Browser capture** — Chrome is launched with CDP instrumentation. Every
+  network request, response body, cookie, and user interaction (clicks, typing,
+  navigation) is recorded with timestamps.
+- **Vision analysis** — The recording is split into per-action video clips.
+  A vision LLM watches each clip and produces structured annotations (what was
+  clicked, what changed, whether the action succeeded).
+- **Sandboxed agent** — The investigator runs Python code in an isolated IPython
+  worker process. It can read the captured data, test hypotheses against the live
+  site, and build the final script incrementally — with guardrails against loops
+  and repetition.
+
+## Configuration
+
+On first run, AutomatiQ creates `~/.automatiq/config.toml` with commented
+defaults. Edit it to override models, timeouts, recording settings, etc.
+
+```toml
+[models]
+agent    = "gemini/gemini-3-flash-preview"
+recorder = "gemini/gemini-3.1-flash-lite-preview"
+# base_url = "http://localhost:11434/v1"   # Ollama / LM Studio / vLLM
+
+[agent]
+max_steps       = 60
+sandbox_timeout = 60
+
+[recording]
+fps                   = 3
+segment_pad           = 2
+merge_gap_threshold   = 1.5
+max_frames_per_prompt = 8
+```
+
+Priority: **CLI flag** > `~/.automatiq/config.toml` > built-in defaults.
+
+### Step-by-step usage
+
+```bash
+automatiq record https://example.com   # just record
+automatiq agent                         # build automation script from last recording
+```
+
+### Install from source
+
+```bash
+git clone https://github.com/StoneSteel27/AutomatiQ.git
+cd AutomatiQ
+pip install -e .
+```
+
+### Dev setup
+
+```bash
+pip install -e ".[dev]"
+pre-commit install
+```
+
+This installs `ruff`, `build`, `twine`, and `pre-commit` hooks (lint + format
+on every commit).
+
 ## Requirements
 
 - Python 3.11+
-- A supported LLM API key (Gemini, OpenAI, OpenRouter, or any OpenAI-compatible endpoint via `--base-url`)
+- A supported LLM API key (Gemini, OpenAI, OpenRouter, or any
+  OpenAI-compatible endpoint via `--base-url`)
 
 ## License
 
