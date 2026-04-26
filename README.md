@@ -19,15 +19,15 @@
 > **Alpha** — Work in progress. Things will break, change, and improve.
 
 AutomatiQ watches you browse, then an AI agent reverse-engineers your session
-into a standalone Python automation/extraction script — no manual inspection needed.
+into a standalone Python automation/extraction script; no manual inspection needed.
 
 ## What it does
 
 ```
-1. RECORD          2. COMPILE               3. AGENT
-   Browse a   ──▶   AI analyses video   ──▶   LLM investigates,
-   website          clips & network           writes & tests
-                    requests                  a Python script
+1. RECORD                      2. COMPILE                        3. AGENT
+   Browse a website     ==>       AI analyses video      ==>        LLM investigates,
+   normally                       clips & network                   writes & tests
+                                  requests                          a Python script
 ```
 
 1. **Record** — Opens Chrome, captures your browsing (screen video, network
@@ -94,7 +94,7 @@ That's it. Browse the site, press `Ctrl+C`, and the agent takes over.
   clicked, what changed, whether the action succeeded).
 - **Sandboxed agent** — The investigator runs Python code in an isolated IPython
   worker process. It can read the captured data, test hypotheses against the live
-  site, and build the final script incrementally — with guardrails against loops
+  site, and build the final script incrementally, with guardrails against loops
   and repetition.
 
 ## Configuration
