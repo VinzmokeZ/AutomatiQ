@@ -139,7 +139,11 @@ def save_content(path, content, is_base64=False):
 
 
 def merge_and_annotate_actions(
-    actions: list[dict], full_video_path: str, video_start_unix: float, on_skip_requested: callable = None
+    actions: list[dict],
+    full_video_path: str,
+    video_start_unix: float,
+    on_skip_requested: callable = None,
+    cancel_token=None,
 ) -> list[dict]:
     if not actions or not video_start_unix or not os.path.exists(full_video_path):
         return actions
@@ -167,12 +171,12 @@ def merge_and_annotate_actions(
     recorder = ActionVideoRecorder(fps=config.FPS)
     ai_analyzer = VideoActionAnalyzer()
 
-    # Import Esc-key helpers from the recorder package.
-    from . import EscCancelled, check_esc_pressed, run_interruptible
+    # Import CancelToken standard and cancellable runner from the parent package.
+    from ..cancel_standard import CancelRequestedException, run_cancellable
 
     logger.info(f"Extracting {len(merged_clips)} video action segments for AI...")
     for idx, cluster in enumerate(merged_clips):
-        if check_esc_pressed():
+        if cancel_token and cancel_token.is_cancelled():
             remaining = len(merged_clips) - idx
             if on_skip_requested and on_skip_requested(remaining):
                 logger.warning(f"Skipping AI analysis for remaining {remaining} segment(s).")
@@ -192,14 +196,14 @@ def merge_and_annotate_actions(
 
         if clip_ok:
             try:
-                ai_description = run_interruptible(
+                ai_description = run_cancellable(
+                    cancel_token,
                     ai_analyzer.analyze_clip,
                     clip_path,
                     clip_end - clip_start,
                     raw_actions=cluster,
-                    cancel_check=check_esc_pressed,
                 )
-            except EscCancelled:
+            except CancelRequestedException:
                 remaining = len(merged_clips) - idx
                 if on_skip_requested and on_skip_requested(remaining):
                     logger.warning(f"Skipping AI analysis for remaining {remaining} segment(s).")
@@ -338,7 +342,11 @@ def process_network_requests(requests: list[dict]) -> tuple[list[dict], dict]:
 
 
 def compile_workspace(
-    session_data: dict, full_video_path: str, video_start_unix: float, on_skip_requested: callable = None
+    session_data: dict,
+    full_video_path: str,
+    video_start_unix: float,
+    on_skip_requested: callable = None,
+    cancel_token=None,
 ) -> bool:
     logger.info("[RULE] Compiling Workspace")
     logger.info("Extracting data, and analyzing video...")
@@ -356,7 +364,9 @@ def compile_workspace(
         timeline_events = []
 
         if actions:
-            actions = merge_and_annotate_actions(actions, full_video_path, video_start_unix, on_skip_requested)
+            actions = merge_and_annotate_actions(
+                actions, full_video_path, video_start_unix, on_skip_requested, cancel_token
+            )
             for action in actions:
                 timeline_events.append(
                     {
