@@ -15,17 +15,8 @@ import sys
 import tarfile
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
-
-from rich.progress import (
-    BarColumn,
-    DownloadColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeRemainingColumn,
-    TransferSpeedColumn,
-)
 
 from . import config
 
@@ -132,33 +123,25 @@ SD_URLS = {
 # ── Download helpers ─────────────────────────────────────────────────────────
 
 
-def _download_file(url: str, dest: Path, label: str | None = None):
-    """Download *url* to *dest* with a Rich progress bar."""
+def _download_file(url: str, dest: Path, label: str | None = None, progress_callback: Callable[[int, int], None] = None):
+    """Download *url* to *dest*, reporting progress to *progress_callback*."""
     display = label or dest.name
 
-    # Open the connection to get Content-Length.
     req = urllib.request.Request(url, headers={"User-Agent": "AutomatiQ/bin-manager"})
     with urllib.request.urlopen(req) as resp:
         total = int(resp.headers.get("Content-Length", 0))
+        downloaded = 0
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold]{task.fields[label]}"),
-            BarColumn(bar_width=30),
-            DownloadColumn(),
-            TransferSpeedColumn(),
-            TimeRemainingColumn(),
-            transient=True,
-        ) as progress:
-            task = progress.add_task("download", total=total or None, label=display)
+        with open(dest, "wb") as fp:
+            while True:
+                chunk = resp.read(64 * 1024)
+                if not chunk:
+                    break
+                fp.write(chunk)
+                downloaded += len(chunk)
 
-            with open(dest, "wb") as fp:
-                while True:
-                    chunk = resp.read(64 * 1024)
-                    if not chunk:
-                        break
-                    fp.write(chunk)
-                    progress.advance(task, len(chunk))
+                if progress_callback:
+                    progress_callback(downloaded, total)
 
     logger.info(f"Downloaded {display} ({dest.stat().st_size:,} bytes)")
 
@@ -198,7 +181,7 @@ def _extract_binary_from_archive(archive_path: Path, binary_name: str, dest: Pat
 # ── Per-tool ensure functions ────────────────────────────────────────────────
 
 
-def _ensure_busybox(bin_dir: Path, os_name: str, arch: str):
+def _ensure_busybox(bin_dir: Path, os_name: str, arch: str, progress_callback: Callable[[int, int], None] = None):
     if os_name != "windows":
         return
     dest = bin_dir / "busybox.exe"
@@ -207,10 +190,10 @@ def _ensure_busybox(bin_dir: Path, os_name: str, arch: str):
     if shutil.which("busybox"):
         return
     url, _ = _pick_busybox_url(arch)
-    _download_file(url, dest, label="busybox")
+    _download_file(url, dest, label="busybox", progress_callback=progress_callback)
 
 
-def _ensure_rg(bin_dir: Path, os_name: str, arch: str):
+def _ensure_rg(bin_dir: Path, os_name: str, arch: str, progress_callback: Callable[[int, int], None] = None):
     dest = bin_dir / _exe("rg")
     if dest.exists():
         return
@@ -221,12 +204,12 @@ def _ensure_rg(bin_dir: Path, os_name: str, arch: str):
         logger.warning(f"No ripgrep download available for {os_name}/{arch}")
         return
     tmp = bin_dir / os.path.basename(url)
-    _download_file(url, tmp, label="ripgrep")
+    _download_file(url, tmp, label="ripgrep", progress_callback=progress_callback)
     _extract_binary_from_archive(tmp, _exe("rg"), dest)
     tmp.unlink(missing_ok=True)
 
 
-def _ensure_jq(bin_dir: Path, os_name: str, arch: str):
+def _ensure_jq(bin_dir: Path, os_name: str, arch: str, progress_callback: Callable[[int, int], None] = None):
     dest = bin_dir / _exe("jq")
     if dest.exists():
         return
@@ -236,11 +219,11 @@ def _ensure_jq(bin_dir: Path, os_name: str, arch: str):
     if not url:
         logger.warning(f"No jq download available for {os_name}/{arch}")
         return
-    _download_file(url, dest, label="jq")
+    _download_file(url, dest, label="jq", progress_callback=progress_callback)
     _make_executable(dest)
 
 
-def _ensure_sd(bin_dir: Path, os_name: str, arch: str):
+def _ensure_sd(bin_dir: Path, os_name: str, arch: str, progress_callback: Callable[[int, int], None] = None):
     dest = bin_dir / _exe("sd")
     if dest.exists():
         return
@@ -251,7 +234,7 @@ def _ensure_sd(bin_dir: Path, os_name: str, arch: str):
         logger.warning(f"No sd download available for {os_name}/{arch}")
         return
     tmp = bin_dir / os.path.basename(url)
-    _download_file(url, tmp, label="sd")
+    _download_file(url, tmp, label="sd", progress_callback=progress_callback)
     _extract_binary_from_archive(tmp, _exe("sd"), dest)
     tmp.unlink(missing_ok=True)
 
@@ -259,17 +242,17 @@ def _ensure_sd(bin_dir: Path, os_name: str, arch: str):
 # ── Public API ───────────────────────────────────────────────────────────────
 
 
-def ensure_binaries() -> Path:
+def ensure_binaries(progress_callback: Callable[[int, int], None] = None) -> Path:
     """Check and download all required binaries. Returns the bin directory path."""
     bin_dir = config.BIN_DIR
     bin_dir.mkdir(parents=True, exist_ok=True)
 
     os_name, arch = _detect_platform()
 
-    _ensure_busybox(bin_dir, os_name, arch)
-    _ensure_rg(bin_dir, os_name, arch)
-    _ensure_jq(bin_dir, os_name, arch)
-    _ensure_sd(bin_dir, os_name, arch)
+    _ensure_busybox(bin_dir, os_name, arch, progress_callback)
+    _ensure_rg(bin_dir, os_name, arch, progress_callback)
+    _ensure_jq(bin_dir, os_name, arch, progress_callback)
+    _ensure_sd(bin_dir, os_name, arch, progress_callback)
 
     if os_name == "windows":
         bb = bin_dir / "busybox.exe"
