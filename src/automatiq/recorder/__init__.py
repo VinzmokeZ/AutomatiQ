@@ -9,6 +9,7 @@ Usage:
 
 import asyncio
 import atexit
+import logging
 import os
 import shutil
 import signal
@@ -19,11 +20,12 @@ import time
 import urllib.request
 
 from .. import config
-from ..console import detail, error, info, log_exception, rule, warn
 from .blocklist_db import BlocklistDB
 from .browser_agent import BrowserAgent
 from .data_compressor import compile_workspace
 from .video_recorder import ActionVideoRecorder
+
+logger = logging.getLogger(__name__)
 
 # Module-level refs so the SIGINT handler can reach them
 _browser_agent: BrowserAgent | None = None
@@ -32,7 +34,7 @@ _video_recorder: ActionVideoRecorder | None = None
 
 def _handle_sigint(signum, frame):
     """Ctrl+C during recording = graceful stop."""
-    info("Ctrl+C detected. Shutting down recorder...")
+    logger.info("Ctrl+C detected. Shutting down recorder...")
     if _browser_agent:
         _browser_agent.stop()
     if _video_recorder:
@@ -184,16 +186,16 @@ def _init_blocklist() -> BlocklistDB:
         hosts_file = config.BLOCKLIST_DIR / f"{name}.txt"
 
         if not hosts_file.exists():
-            info(f"Downloading blocklist '{name}' ...")
+            logger.info(f"Downloading blocklist '{name}' ...")
             try:
                 urllib.request.urlretrieve(url, str(hosts_file))
-                info(f"Saved {hosts_file.name}")
+                logger.info(f"Saved {hosts_file.name}")
             except Exception as exc:
-                warn(f"Failed to download blocklist '{name}': {exc}")
+                logger.warning(f"Failed to download blocklist '{name}': {exc}")
                 continue
 
         count = db.load_file(str(hosts_file), source_name=name, source_url=url)
-        detail(f"{name}: {count:,} domains")
+        logger.debug(f"{name}: {count:,} domains")
 
     return db
 
@@ -223,7 +225,7 @@ def run_recording(url: str = "about:blank") -> bool:
         signal.signal(signal.SIGINT, _handle_sigint)
     except (OSError, ValueError) as exc:
         # signal.signal() raises ValueError when called from a non-main thread.
-        warn(f"Could not install SIGINT handler (running in a thread?): {exc}")
+        logger.warning(f"Could not install SIGINT handler (running in a thread?): {exc}")
         prev_handler = signal.SIG_DFL
 
     # Write the temp video outside workspace/ so compile_workspace can wipe it cleanly
@@ -234,12 +236,11 @@ def run_recording(url: str = "about:blank") -> bool:
     _video_recorder = ActionVideoRecorder(fps=config.FPS, output_path=temp_video_path)
     _browser_agent = BrowserAgent(blocklist=blocklist)
 
-    rule("STARTING RECORDER", style="bold cyan")
-    info(f"Target URL : {url}")
-    info(f"AI Model   : {config.RECORDER_AI_MODEL}")
-    info(f"Blocklist  : {blocklist.total_enabled_domains()} domains loaded")
-    info("Press Ctrl+C to stop recording")
-    rule(style="bold cyan")
+    logger.info("[RULE] STARTING RECORDER")
+    logger.info(f"Target URL : {url}")
+    logger.info(f"AI Model   : {config.RECORDER_AI_MODEL}")
+    logger.info(f"Blocklist  : {blocklist.total_enabled_domains()} domains loaded")
+    logger.info("Press Ctrl+C to stop recording")
 
     session_data = None
     success = False
@@ -248,15 +249,15 @@ def run_recording(url: str = "about:blank") -> bool:
         _video_recorder.start()
         session_data = asyncio.run(_browser_agent.run_session(url=url))
     except Exception as exc:
-        error(f"Recording session failed: {exc}")
-        log_exception()
+        logger.error(f"Recording session failed: {exc}")
+        logger.exception("Exception occurred")
     finally:
         video_start_unix = None
         try:
             video_start_unix = _video_recorder.stop()
         except Exception as exc:
-            error(f"Failed to stop video recorder: {exc}")
-            log_exception()
+            logger.error(f"Failed to stop video recorder: {exc}")
+            logger.exception("Exception occurred")
 
         # Switch Ctrl+C to default (force-quit) during compilation.
         # Esc is used for the soft "skip AI?" prompt instead.
@@ -265,7 +266,7 @@ def run_recording(url: str = "about:blank") -> bool:
         except (OSError, ValueError):
             pass
         _activate_esc_monitor()
-        info("Press Esc to skip AI analysis. Ctrl+C to force-quit.")
+        logger.info("Press Esc to skip AI analysis. Ctrl+C to force-quit.")
 
         if session_data and video_start_unix:
             try:
@@ -275,8 +276,8 @@ def run_recording(url: str = "about:blank") -> bool:
                     video_start_unix=video_start_unix,
                 )
             except Exception as exc:
-                error(f"Workspace compilation raised unexpectedly: {exc}")
-                log_exception()
+                logger.error(f"Workspace compilation raised unexpectedly: {exc}")
+                logger.exception("Exception occurred")
 
             # Move the full recording into the compiled workspace
             final_video_path = os.path.join(str(config.WORKSPACE_DIR), "session_dump", "full_record.mp4")
@@ -284,21 +285,21 @@ def run_recording(url: str = "about:blank") -> bool:
                 try:
                     os.makedirs(os.path.dirname(final_video_path), exist_ok=True)
                     shutil.move(temp_video_path, final_video_path)
-                    info(f"Full recording saved to {final_video_path}")
+                    logger.info(f"Full recording saved to {final_video_path}")
                 except OSError as exc:
-                    error(f"Failed to move recording to workspace: {exc}")
-                    log_exception()
+                    logger.error(f"Failed to move recording to workspace: {exc}")
+                    logger.exception("Exception occurred")
         else:
-            warn("Session data or video timestamp missing. Skipping compilation.")
+            logger.warning("Session data or video timestamp missing. Skipping compilation.")
 
         blocked = _browser_agent.stats["blocked_by_blocklist"] if _browser_agent else 0
         if blocked:
-            info(f"Blocklist filtered {blocked} ad/tracker request(s)")
+            logger.info(f"Blocklist filtered {blocked} ad/tracker request(s)")
 
         try:
             blocklist.close()
         except Exception as exc:
-            warn(f"Failed to close blocklist DB: {exc}")
+            logger.warning(f"Failed to close blocklist DB: {exc}")
 
         _deactivate_esc_monitor()
         try:

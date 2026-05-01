@@ -6,6 +6,7 @@ Checks ~/.automatiq/bin first, then system PATH, then downloads with a Rich
 progress display.
 """
 
+import logging
 import os
 import platform
 import shutil
@@ -27,7 +28,8 @@ from rich.progress import (
 )
 
 from . import config
-from .console import error, info, warn
+
+logger = logging.getLogger(__name__)
 
 # ── Platform detection ───────────────────────────────────────────────────────
 
@@ -127,7 +129,6 @@ SD_URLS = {
     ("darwin", "arm64"): "https://github.com/chmln/sd/releases/download/v1.0.0/sd-v1.0.0-aarch64-apple-darwin.tar.gz",
 }
 
-
 # ── Download helpers ─────────────────────────────────────────────────────────
 
 
@@ -159,7 +160,7 @@ def _download_file(url: str, dest: Path, label: str | None = None):
                     fp.write(chunk)
                     progress.advance(task, len(chunk))
 
-    info(f"Downloaded {display} ({dest.stat().st_size:,} bytes)")
+    logger.info(f"Downloaded {display} ({dest.stat().st_size:,} bytes)")
 
 
 def _make_executable(path: Path):
@@ -190,7 +191,7 @@ def _extract_binary_from_archive(archive_path: Path, binary_name: str, dest: Pat
                         _make_executable(dest)
                         return True
 
-    warn(f"Could not find {binary_name} inside {archive_path}")
+    logger.warning(f"Could not find {binary_name} inside {archive_path}")
     return False
 
 
@@ -217,7 +218,7 @@ def _ensure_rg(bin_dir: Path, os_name: str, arch: str):
         return
     url = RG_URLS.get((os_name, arch))
     if not url:
-        warn(f"No ripgrep download available for {os_name}/{arch}")
+        logger.warning(f"No ripgrep download available for {os_name}/{arch}")
         return
     tmp = bin_dir / os.path.basename(url)
     _download_file(url, tmp, label="ripgrep")
@@ -233,7 +234,7 @@ def _ensure_jq(bin_dir: Path, os_name: str, arch: str):
         return
     url = JQ_URLS.get((os_name, arch))
     if not url:
-        warn(f"No jq download available for {os_name}/{arch}")
+        logger.warning(f"No jq download available for {os_name}/{arch}")
         return
     _download_file(url, dest, label="jq")
     _make_executable(dest)
@@ -247,7 +248,7 @@ def _ensure_sd(bin_dir: Path, os_name: str, arch: str):
         return
     url = SD_URLS.get((os_name, arch))
     if not url:
-        warn(f"No sd download available for {os_name}/{arch}")
+        logger.warning(f"No sd download available for {os_name}/{arch}")
         return
     tmp = bin_dir / os.path.basename(url)
     _download_file(url, tmp, label="sd")
@@ -273,17 +274,17 @@ def ensure_binaries() -> Path:
     if os_name == "windows":
         bb = bin_dir / "busybox.exe"
         if not bb.exists() and not shutil.which("busybox"):
-            error("busybox is required on Windows but was not found.")
-            error("Download manually from https://frippery.org/busybox/")
-            error("Place busybox.exe in: " + str(bin_dir))
+            logger.error("busybox is required on Windows but was not found.")
+            logger.error("Download manually from https://frippery.org/busybox/")
+            logger.error("Place busybox.exe in: " + str(bin_dir))
             sys.exit(1)
 
     # Only report missing tools; stay silent when everything is fine.
     tools = ["busybox", "rg", "jq", "sd"] if os_name == "windows" else ["rg", "jq", "sd"]
     missing = [t for t in tools if not (bin_dir / _exe(t)).exists() and not shutil.which(t)]
     if missing:
-        warn(f"Missing binaries: {', '.join(missing)}")
+        logger.warning(f"Missing binaries: {', '.join(missing)}")
     else:
-        info("Sandbox binaries ready.")
+        logger.info("Sandbox binaries ready.")
 
     return bin_dir
