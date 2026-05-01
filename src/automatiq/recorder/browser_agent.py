@@ -246,8 +246,7 @@ class BrowserAgent:
             except Exception:
                 # Streaming not supported or request already done — that's fine,
                 # getResponseBody will still work for most responses.
-                # Log to file only (not terminal) since this is expected for many requests.
-                logger.exception("Exception occurred")
+                pass
 
     async def loading_finished_handler(self, event: cdp.network.LoadingFinished):
         if event.request_id in self.active_map:
@@ -322,10 +321,6 @@ class BrowserAgent:
                                 self.stats["body_failed"] += 1
                         else:
                             self.stats["body_failed"] += 1
-                        if not from_cache:
-                            logger.warning(
-                                f"Body fetch failed for {req['url'][:60]}: {req.get('body_fetch_error', 'unknown')}"
-                            )
 
             self._streamed_bodies.pop(str(event.request_id), None)
             self.active_map.pop(event.request_id, None)

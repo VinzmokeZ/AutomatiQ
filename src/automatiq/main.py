@@ -240,7 +240,10 @@ def run_agent(input_queue: queue.Queue = None, output_queue: queue.Queue = None,
                 if input_queue is not None:
                     ip = input_queue.get()
                 else:
-                    ip = rich_prompt()
+                    try:
+                        ip = rich_prompt()
+                    except EOFError:
+                        ip = "q"
                 if ip.strip().lower() == "q":
                     info("User requested exit.")
                     break
@@ -473,7 +476,7 @@ def run_agent(input_queue: queue.Queue = None, output_queue: queue.Queue = None,
                     f"{mode_injection}\n\n--- Research memo from previous mode ---\n{context_memo}"
                 )
                 awaiting_mode_switch = True
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         logger.info("Interrupted by user (Ctrl+C). Saving session ...")
         sandbox.cancel()
     except Exception as exc:
