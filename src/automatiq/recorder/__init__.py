@@ -110,6 +110,9 @@ def run_recording(url: str = "about:blank") -> bool:
             pass
 
         cancel_token = CancelToken()
+        from ..console import start_cli_esc_listener
+
+        monitor = start_cli_esc_listener(cancel_token)
         logger.info("Press Esc to skip AI analysis. Ctrl+C to force-quit.")
 
         def ask_user_to_skip(remaining: int) -> bool:
@@ -137,6 +140,9 @@ def run_recording(url: str = "about:blank") -> bool:
             except Exception as exc:
                 logger.error(f"Workspace compilation raised unexpectedly: {exc}")
                 logger.exception("Exception occurred")
+            finally:
+                if monitor:
+                    monitor.clear()
 
             final_video_path = os.path.join(str(config.WORKSPACE_DIR), "session_dump", "full_record.mp4")
             if success and os.path.exists(temp_video_path):

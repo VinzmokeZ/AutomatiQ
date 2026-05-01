@@ -6,7 +6,11 @@ This gives us consistent styling, color-coded log levels, and
 nice panels for agent output — all from a single shared Console.
 """
 
+import atexit
 import logging
+import os
+import sys
+import threading
 import time
 import traceback
 from datetime import datetime
@@ -20,6 +24,8 @@ from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.text import Text
 from rich.theme import Theme
+
+from .cancel_standard import CancelToken
 
 _theme = Theme(
     {
@@ -172,3 +178,56 @@ def spinner(message: str = "Working..."):
 
 def prompt() -> str:
     return console.input("[bold green]>>> [/bold green]")
+
+
+def start_cli_esc_listener(token: CancelToken) -> threading.Event | None:
+    if not sys.stdin.isatty():
+        return None
+
+    active = threading.Event()
+    active.set()
+
+    if sys.platform == "win32":
+        import msvcrt
+
+        def _listen():
+            while active.is_set():
+                if msvcrt.kbhit():
+                    key = msvcrt.getch()
+                    if key == b"\x1b":
+                        token.cancel()
+                        while msvcrt.kbhit():
+                            msvcrt.getch()
+                time.sleep(0.05)
+    else:
+        import select
+        import termios
+        import tty
+
+        def _listen():
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+
+            def _restore():
+                try:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old)
+                    termios.tcflush(fd, termios.TCIFLUSH)
+                except Exception:
+                    pass
+
+            atexit.register(_restore)
+            try:
+                tty.setcbreak(fd)
+                while active.is_set():
+                    ready, _, _ = select.select([sys.stdin], [], [], 0.05)
+                    if ready:
+                        ch = os.read(fd, 1)
+                        if ch == b"\x1b":
+                            token.cancel()
+                            termios.tcflush(fd, termios.TCIFLUSH)
+            finally:
+                _restore()
+
+    t = threading.Thread(target=_listen, daemon=True)
+    t.start()
+    return active

@@ -164,9 +164,17 @@ def cmd_agent(args):
     from .bin_manager import ensure_binaries
 
     ensure_binaries()
+    from .cancel_standard import CancelToken
+    from .console import start_cli_esc_listener
     from .main import run_agent
 
-    run_agent()
+    token = CancelToken()
+    monitor = start_cli_esc_listener(token)
+    try:
+        run_agent(cancel_token=token)
+    finally:
+        if monitor:
+            monitor.clear()
 
 
 def cmd_run(args):
@@ -176,6 +184,8 @@ def cmd_run(args):
 
     check_api_keys(config.AGENT_MODEL, config.RECORDER_AI_MODEL)
     from .bin_manager import ensure_binaries
+    from .cancel_standard import CancelToken
+    from .console import start_cli_esc_listener
     from .main import run_agent
     from .recorder import run_recording
 
@@ -187,7 +197,14 @@ def cmd_run(args):
         sys.exit(1)
 
     rule("Recording complete. Launching agent...", style="bold green")
-    run_agent()
+
+    token = CancelToken()
+    monitor = start_cli_esc_listener(token)
+    try:
+        run_agent(cancel_token=token)
+    finally:
+        if monitor:
+            monitor.clear()
 
 
 # ---------------------------------------------------------------------------
