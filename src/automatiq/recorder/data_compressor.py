@@ -138,7 +138,9 @@ def save_content(path, content, is_base64=False):
         logger.exception("Exception occurred")
 
 
-def merge_and_annotate_actions(actions: list[dict], full_video_path: str, video_start_unix: float) -> list[dict]:
+def merge_and_annotate_actions(
+    actions: list[dict], full_video_path: str, video_start_unix: float, on_skip_requested: callable = None
+) -> list[dict]:
     if not actions or not video_start_unix or not os.path.exists(full_video_path):
         return actions
 
@@ -166,25 +168,13 @@ def merge_and_annotate_actions(actions: list[dict], full_video_path: str, video_
     ai_analyzer = VideoActionAnalyzer()
 
     # Import Esc-key helpers from the recorder package.
-    from . import EscCancelled, check_esc_pressed, clear_esc_flag, run_interruptible
-
-    def _prompt_skip(remaining: int) -> bool:
-        """Ask the user whether to skip remaining AI segments. Returns True to skip."""
-        try:
-            answer = (
-                input(f"\n  Esc pressed. Skip AI analysis for remaining {remaining} segment(s)? (y/n): ").strip().lower()
-            )
-        except (KeyboardInterrupt, EOFError):
-            logger.warning("Force-quitting.")
-            raise SystemExit(1) from None
-        clear_esc_flag()
-        return answer in ("y", "yes", "")
+    from . import EscCancelled, check_esc_pressed, run_interruptible
 
     logger.info(f"Extracting {len(merged_clips)} video action segments for AI...")
     for idx, cluster in enumerate(merged_clips):
         if check_esc_pressed():
             remaining = len(merged_clips) - idx
-            if _prompt_skip(remaining):
+            if on_skip_requested and on_skip_requested(remaining):
                 logger.warning(f"Skipping AI analysis for remaining {remaining} segment(s).")
                 break
             logger.info("Continuing AI analysis...")
@@ -211,7 +201,7 @@ def merge_and_annotate_actions(actions: list[dict], full_video_path: str, video_
                 )
             except EscCancelled:
                 remaining = len(merged_clips) - idx
-                if _prompt_skip(remaining):
+                if on_skip_requested and on_skip_requested(remaining):
                     logger.warning(f"Skipping AI analysis for remaining {remaining} segment(s).")
                     break
                 logger.info("Continuing AI analysis...")
@@ -347,7 +337,9 @@ def process_network_requests(requests: list[dict]) -> tuple[list[dict], dict]:
     return timeline_requests, detection_stats
 
 
-def compile_workspace(session_data: dict, full_video_path: str, video_start_unix: float) -> bool:
+def compile_workspace(
+    session_data: dict, full_video_path: str, video_start_unix: float, on_skip_requested: callable = None
+) -> bool:
     logger.info("[RULE] Compiling Workspace")
     logger.info("Extracting data, and analyzing video...")
 
@@ -364,7 +356,7 @@ def compile_workspace(session_data: dict, full_video_path: str, video_start_unix
         timeline_events = []
 
         if actions:
-            actions = merge_and_annotate_actions(actions, full_video_path, video_start_unix)
+            actions = merge_and_annotate_actions(actions, full_video_path, video_start_unix, on_skip_requested)
             for action in actions:
                 timeline_events.append(
                     {

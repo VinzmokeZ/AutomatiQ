@@ -268,12 +268,26 @@ def run_recording(url: str = "about:blank") -> bool:
         _activate_esc_monitor()
         logger.info("Press Esc to skip AI analysis. Ctrl+C to force-quit.")
 
+        def ask_user_to_skip(remaining: int) -> bool:
+            try:
+                answer = (
+                    input(f"\n  Esc pressed. Skip AI analysis for remaining {remaining} segment(s)? (y/n): ")
+                    .strip()
+                    .lower()
+                )
+                clear_esc_flag()
+                return answer in ("y", "yes", "")
+            except (KeyboardInterrupt, EOFError):
+                logger.warning("Force-quitting.")
+                raise SystemExit(1) from None
+
         if session_data and video_start_unix:
             try:
                 success = compile_workspace(
                     session_data=session_data,
                     full_video_path=temp_video_path,
                     video_start_unix=video_start_unix,
+                    on_skip_requested=ask_user_to_skip,
                 )
             except Exception as exc:
                 logger.error(f"Workspace compilation raised unexpectedly: {exc}")

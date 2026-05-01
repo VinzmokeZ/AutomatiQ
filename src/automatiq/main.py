@@ -6,6 +6,7 @@ recorded browser session and produces a standalone automation/extraction script.
 import atexit
 import json
 import os
+import queue
 import sys
 import threading
 import time
@@ -170,7 +171,7 @@ def _run_interruptible(fn, *args, **kwargs):
     return result_box[0]
 
 
-def run_agent():
+def run_agent(input_queue: queue.Queue = None):
     """Interactive agent loop. Reads from the workspace produced by the recorder."""
 
     # ensure_output_dirs() and init_file_logger() are called by __main__.py
@@ -318,7 +319,12 @@ def run_agent():
                 if _first_prompt:
                     info("Type in q to quit · Esc to cancel processing")
                     _first_prompt = False
-                ip = rich_prompt()
+
+                if input_queue is not None:
+                    ip = input_queue.get()
+                else:
+                    ip = rich_prompt()
+
                 if ip.strip().lower() == "q":
                     info("User requested exit.")
                     break
