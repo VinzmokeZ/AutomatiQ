@@ -82,7 +82,7 @@ def _preload():
         level = logging.DEBUG if config.VERBOSE else logging.INFO
 
         rich_handler = RichHandler(
-            console=console, show_time=True, show_path=config.VERBOSE, markup=False, rich_tracebacks=True
+            console=console, show_time=False, show_path=config.VERBOSE, markup=False, rich_tracebacks=True
         )
         rich_handler.setLevel(level)
 
