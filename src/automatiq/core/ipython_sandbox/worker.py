@@ -123,10 +123,15 @@ def ipython_worker(
         poller.start()
 
     from IPython.core.interactiveshell import InteractiveShell
+    from traitlets.config import Config
 
-    InteractiveShell.colors = "nocolor"
-    InteractiveShell.color_info = False
-    shell = InteractiveShell.instance()
+    c = Config()
+    c.InteractiveShell.colors = "nocolor"
+    c.InteractiveShell.color_info = False
+    c.HistoryManager.enabled = False
+    c.InteractiveShell.profile_dir = os.path.join(working_dir, ".ipython_profile")
+
+    shell = InteractiveShell.instance(config=c)
 
     if sys.platform == "win32":
         import subprocess

@@ -59,6 +59,7 @@ dev = [
     "twine>=5.0.0",
     "pytest>=8.0.0",
     "pytest-mock>=3.14.0",
+    "pytest-benchmark>=4.0.0",
 ]
 
 [project.scripts]
@@ -85,3 +86,8 @@ ignore = ["UP042"]
 
 [tool.ruff.format]
 quote-style = "double"
+
+[dependency-groups]
+dev = [
+    "pytest-benchmark>=5.2.3",
+]
