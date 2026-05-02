@@ -12,6 +12,17 @@ class EventType(Enum):
     CODE_OUTPUT = "code_output"  # payload: {"output": str}
     AGENT_DONE = "agent_done"  # payload: {}
 
+    # New events for UI decoupling
+    LLM_REQUEST_START = "llm_request_start"  # payload: {}
+    LLM_REQUEST_END = "llm_request_end"  # payload: {}
+    CODE_EXEC_START = "code_exec_start"  # payload: {}
+    CODE_EXEC_END = "code_exec_end"  # payload: {}
+    WAIT_START = "wait_start"  # payload: {"seconds": int, "reason": str}
+    PROMPT_REQUEST = "prompt_request"  # payload: {}
+    LOG_INFO = "log_info"  # payload: {"text": str}
+    LOG_WARN = "log_warn"  # payload: {"text": str}
+    LOG_ERROR = "log_error"  # payload: {"text": str}
+
 
 @dataclass
 class AgentEvent:

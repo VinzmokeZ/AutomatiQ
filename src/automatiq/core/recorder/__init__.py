@@ -55,7 +55,7 @@ def _init_blocklist() -> BlocklistDB:
     return db
 
 
-def run_recording(url: str = "about:blank") -> bool:
+def run_recording(url: str = "about:blank", cancel_token: CancelToken = None, skip_callback=None) -> bool:
     """Run the full recording pipeline: browser -> video -> compile workspace.
 
     1. Launches Chrome with CDP instrumentation and screen capture.
@@ -109,24 +109,14 @@ def run_recording(url: str = "about:blank") -> bool:
         except (OSError, ValueError):
             pass
 
-        cancel_token = CancelToken()
-        from ..console import start_cli_esc_listener
-
-        monitor = start_cli_esc_listener(cancel_token)
-        logger.info("Press Esc to skip AI analysis. Ctrl+C to force-quit.")
+        if cancel_token is None:
+            cancel_token = CancelToken()
 
         def ask_user_to_skip(remaining: int) -> bool:
-            try:
-                answer = (
-                    input(f"\n  Esc pressed. Skip AI analysis for remaining {remaining} segment(s)? (y/na): ")
-                    .strip()
-                    .lower()
-                )
-                cancel_token.reset()
-                return answer in ("y", "yes", "")
-            except (KeyboardInterrupt, EOFError):
-                logger.warning("Force-quitting.")
-                raise SystemExit(1) from None
+            if skip_callback:
+                return skip_callback(remaining, cancel_token)
+            cancel_token.reset()
+            return True
 
         if session_data and video_start_unix:
             try:
@@ -140,9 +130,6 @@ def run_recording(url: str = "about:blank") -> bool:
             except Exception as exc:
                 logger.error(f"Workspace compilation raised unexpectedly: {exc}")
                 logger.exception("Exception occurred")
-            finally:
-                if monitor:
-                    monitor.clear()
 
             final_video_path = os.path.join(str(config.WORKSPACE_DIR), "session_dump", "full_record.mp4")
             if success and os.path.exists(temp_video_path):

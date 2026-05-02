@@ -25,7 +25,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 from rich.theme import Theme
 
-from .cancel_standard import CancelToken
+from ..core.cancel_standard import CancelToken
 
 _theme = Theme(
     {
@@ -152,7 +152,7 @@ def rule(title: str = "", style: str = "dim") -> None:
 
 def detail(msg: str) -> None:
     _log(logging.DEBUG, msg)
-    from . import config
+    from ..core import config
 
     if config.VERBOSE:
         console.print(f"  [dim]{escape(msg)}[/dim]")
