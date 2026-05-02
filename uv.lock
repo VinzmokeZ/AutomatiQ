@@ -224,6 +224,7 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "build" },
     { name = "pytest-benchmark" },
 ]
 
@@ -256,7 +257,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest-benchmark", specifier = ">=5.2.3" }]
+dev = [
+    { name = "build", specifier = ">=1.5.0" },
+    { name = "pytest-benchmark", specifier = ">=5.2.3" },
+]
 
 [[package]]
 name = "backports-tarfile"
