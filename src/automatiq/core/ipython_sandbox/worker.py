@@ -201,15 +201,16 @@ def ipython_worker(
                     os.close(original_stderr_fd)
 
             ret_val = ""
-            if result.error_in_exec:
-                ret_val = str(result.error_in_exec)
+            error = result.error_in_exec or result.error_before_exec
+            if error:
+                ret_val = str(error)
             elif result.result is not None:
                 ret_val = str(result.result)
 
             result_queue.put(
                 {
-                    "status": "error" if result.error_in_exec else "success",
-                    "exit_code": 1 if result.error_in_exec else 0,
+                    "status": "error" if error else "success",
+                    "exit_code": 1 if error else 0,
                     "ret_val": ret_val,
                 }
             )

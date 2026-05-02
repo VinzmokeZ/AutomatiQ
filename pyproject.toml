@@ -57,6 +57,8 @@ dev = [
     "ruff>=0.3.0",
     "build>=0.10.0",
     "twine>=5.0.0",
+    "pytest>=8.0.0",
+    "pytest-mock>=3.14.0",
 ]
 
 [project.scripts]
@@ -70,7 +72,7 @@ where = ["src"]
 include = ["automatiq*"]
 
 [tool.setuptools.package-data]
-"automatiq" = ["data/*.json", "recorder/js/*.js"]
+"automatiq" = ["cli/data/*.json", "core/recorder/js/*.js"]
 
 [tool.ruff]
 line-length = 121

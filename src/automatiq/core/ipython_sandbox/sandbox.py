@@ -51,6 +51,11 @@ class AgentSandbox:
         if self.command_queue:
             self.command_queue.close()
         if self.result_queue:
+            # Unblock any waiting get() calls before closing
+            try:
+                self.result_queue.put({"status": "error", "exit_code": 1, "ret_val": "CancelledByUser"})
+            except Exception:
+                pass
             self.result_queue.close()
 
         self.command_queue = multiprocessing.Queue()
@@ -155,15 +160,15 @@ class AgentSandbox:
                 if res.get("ret_val") == "KeyboardInterrupt":
                     status, code_exit, ret_val = "error", 1, "KeyboardInterrupt"
                     timeout_msg = "\n[Execution interrupted by user. State preserved.]"
-                    logger.debug(f"{cell_id} — soft interrupt succeeded, state preserved.")
+                    logger.debug(f"{cell_id} - soft interrupt succeeded, state preserved.")
                 else:
                     status, code_exit, ret_val = "error", 1, "CancelledByUser"
-                    logger.debug(f"{cell_id} — result arrived during cancel.")
+                    logger.debug(f"{cell_id} - result arrived during cancel.")
             else:
                 status, code_exit, ret_val = res["status"], res["exit_code"], res["ret_val"]
                 logger.debug(f"{cell_id} finished naturally with status: {status}")
 
-        except queue.Empty:
+        except (queue.Empty, EOFError, OSError, ValueError):
             # Check if the process was replaced by cancel_worker()
             if self._cancel_flag.is_set() or self.process is not original_process:
                 status, code_exit, ret_val = "error", 1, "CancelledByUser"
@@ -184,6 +189,9 @@ class AgentSandbox:
                         status, code_exit, ret_val = "error", 1, "CancelledByUser"
                     else:
                         logger.error(f"Hard Timeout reached for {cell_id}. Process unresponsive. Hard killing...")
+                        status, code_exit, ret_val = "error", 1, "HardTimeout"
+                        fatal_timeout = True
+                        timeout_msg = "\n[FATAL TIMEOUT: Execution forcefully terminated. State lost.]"
                         self.start_process()
 
         finally:
@@ -258,11 +266,11 @@ class AgentSandbox:
 
     def _cancel_worker(self):
         """Background thread: wait for softkill, then hard-kill if needed."""
-        deadline = time.monotonic() + 0.5
+        deadline = time.monotonic() + 1.5
         while time.monotonic() < deadline:
             if not self._executing.is_set():
                 self._cancel_result = "preserved"
-                logger.debug("Soft interrupt succeeded — state preserved.")
+                logger.debug("Soft interrupt succeeded - state preserved.")
                 return
             time.sleep(0.05)
 
