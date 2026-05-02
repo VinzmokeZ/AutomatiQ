@@ -130,21 +130,31 @@ automatiq agent                         # build automation script from last reco
 
 ### Install from source
 
+AutomatiQ is managed using [uv](https://docs.astral.sh/uv/).
+
 ```bash
 git clone https://github.com/StoneSteel27/AutomatiQ.git
 cd AutomatiQ
-pip install -e .
+uv sync
+uv run automatiq run https://example.com
 ```
 
 ### Dev setup
 
+Development dependencies (pytest, ruff, pre-commit, etc.) are installed automatically when you run `uv sync`. To set up the git hooks:
+
 ```bash
-pip install -e ".[dev]"
-pre-commit install
+uv sync
+uv run pre-commit install
 ```
 
-This installs `ruff`, `build`, `twine`, and `pre-commit` hooks (lint + format
-on every commit).
+Run tests and benchmarks:
+
+```bash
+uv run pytest
+```
+
+This ensures `ruff`, `build`, `twine`, `pytest`, and `pre-commit` hooks (lint + format on every commit) are properly configured in your isolated environment.
 
 ## Requirements
 
