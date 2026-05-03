@@ -13,6 +13,14 @@
   <img src="https://img.shields.io/badge/python-3.11+-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/license-MIT-violet?style=flat-square" alt="License">
 </p>
+<p align="center">
+  <a href="https://github.com/StoneSteel27/AutomatiQ/actions/workflows/test.yaml">
+    <img src="https://img.shields.io/github/actions/workflow/status/StoneSteel27/AutomatiQ/test.yaml?branch=main&label=tests&style=flat-square" alt="Test Status">
+  </a>
+  <a href="https://github.com/StoneSteel27/AutomatiQ/actions/workflows/lint.yaml">
+    <img src="https://img.shields.io/github/actions/workflow/status/StoneSteel27/AutomatiQ/lint.yaml?branch=main&label=lint&style=flat-square" alt="Lint Status">
+  </a>
+</p>
 
 # AutomatiQ
 
