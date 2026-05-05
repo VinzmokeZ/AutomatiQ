@@ -6,7 +6,7 @@
       <stop offset="0%" stop-color="#00E5FF" />
       <stop offset="100%" stop-color="#3A86FF" />
     </linearGradient>
-    
+
     <!-- Arrow 2 Gradient (Blue to Purple) -->
     <linearGradient id="grad2" x1="570" y1="0" x2="670" y2="0" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#3A86FF" />
@@ -21,7 +21,7 @@
 
   <!-- Background / Terminal Window -->
   <rect width="950" height="250" rx="8" fill="#0D1117" stroke="#30363D" stroke-width="1.5" />
-  
+
   <!-- Terminal Window Controls -->
   <rect x="15" y="15" width="8" height="8" fill="#30363D" />
   <rect x="30" y="15" width="8" height="8" fill="#30363D" />
@@ -34,13 +34,13 @@
   <text x="94" y="94" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="64" font-weight="900" fill="#002b33">01</text>
   <!-- Foreground Number -->
   <text x="90" y="90" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="64" font-weight="900" fill="#00E5FF">01</text>
-  
+
   <!-- Glowing Red Record Dot -->
   <circle cx="98" cy="135" r="8" fill="#FF3333" opacity="0.25" />
   <circle cx="98" cy="135" r="4" fill="#FF3333" />
-  
+
   <text x="114" y="140" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="16" font-weight="bold" fill="#00E5FF" letter-spacing="2">RECORD</text>
-  
+
   <text x="90" y="170" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" fill="#C9D1D9">
     <tspan x="90" dy="0">Browse a website</tspan>
     <tspan x="90" dy="22">normally.</tspan>
@@ -54,7 +54,7 @@
   <rect x="244" y="138" width="8" height="8" fill="#011A30" />
   <rect x="260" y="138" width="8" height="8" fill="#011A30" />
   <polygon points="276,138 314,138 314,128 334,142 314,156 314,146 276,146" fill="#011A30" />
-  
+
   <!-- Foreground for Arrow 1 -->
   <rect x="240" y="134" width="8" height="8" fill="url(#grad1)" />
   <rect x="256" y="134" width="8" height="8" fill="url(#grad1)" />
@@ -68,7 +68,7 @@
   <text x="394" y="94" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="64" font-weight="900" fill="#001D4A">02</text>
   <!-- Foreground Number -->
   <text x="390" y="90" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="64" font-weight="900" fill="#3A86FF">02</text>
-  
+
   <!-- Gear Icon with Shadow -->
   <svg x="390" y="127" width="20" height="20" viewBox="0 0 24 24" fill="#001D4A">
     <use href="#gear-icon" />
@@ -78,7 +78,7 @@
   </svg>
 
   <text x="416" y="140" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="16" font-weight="bold" fill="#3A86FF" letter-spacing="2">COMPILE</text>
-  
+
   <text x="390" y="170" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" fill="#C9D1D9">
     <tspan x="390" dy="0">AI analyses video</tspan>
     <tspan x="390" dy="22">clips &amp; network</tspan>
@@ -93,7 +93,7 @@
   <rect x="574" y="138" width="8" height="8" fill="#16053D" />
   <rect x="590" y="138" width="8" height="8" fill="#16053D" />
   <polygon points="606,138 644,138 644,128 664,142 644,156 644,146 606,146" fill="#16053D" />
-  
+
   <!-- Foreground for Arrow 2 -->
   <rect x="570" y="134" width="8" height="8" fill="url(#grad2)" />
   <rect x="586" y="134" width="8" height="8" fill="url(#grad2)" />
@@ -107,7 +107,7 @@
   <text x="724" y="94" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="64" font-weight="900" fill="#33004A">03</text>
   <!-- Foreground Number -->
   <text x="720" y="90" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="64" font-weight="900" fill="#B200FF">03</text>
-  
+
   <!-- Square Terminal App Icon -->
   <!-- Shadow -->
   <rect x="722" y="125" width="24" height="24" rx="4" fill="#160029" />
@@ -117,7 +117,7 @@
   <text x="723" y="139" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="13" font-weight="900" fill="#FFFFFF">&gt;_</text>
 
   <text x="752" y="140" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="16" font-weight="bold" fill="#B200FF" letter-spacing="2">AGENT</text>
-  
+
   <text x="720" y="170" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" fill="#C9D1D9">
     <tspan x="720" dy="0">LLM investigates,</tspan>
     <tspan x="720" dy="22">writes &amp; tests a</tspan>
