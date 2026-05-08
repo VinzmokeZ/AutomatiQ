@@ -377,8 +377,6 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
                 events.tool_message.send("core", text=f"\n{resp.tool_content.message_to_user}\n")
                 needs_user_input = True
             elif resp.tool == ToolEnum.execute_ipython:
-                ts = time.time()
-                events.log_info.send("core", text=f"start: {ts}")
                 script_to_run = resp.tool_content.ipython_script
                 consecutive_execs += 1
                 cell_counter += 1
@@ -465,8 +463,6 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
                     )
                     awaiting_tool_complete = False
                     continue
-                td = time.time()
-                events.log_info.send("core", text=f"final: {td - ts}")
             elif resp.tool == ToolEnum.switch_mode:
                 target_mode = resp.tool_content.target_mode
                 context_memo = resp.tool_content.context
