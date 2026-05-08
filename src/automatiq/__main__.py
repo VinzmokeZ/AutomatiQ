@@ -55,10 +55,29 @@ def _peek_base_url() -> str | None:
     return None
 
 
+def _peek_output_dir() -> str | None:
+    args = sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg == "--output-dir" and i + 1 < len(args):
+            return args[i + 1]
+        if arg.startswith("--output-dir="):
+            return arg.split("=", 1)[1]
+    return None
+
+
 def _preload():
     global _preload_error
     try:
         from .core import config
+
+        out_dir = _peek_output_dir()
+        if out_dir:
+            from pathlib import Path
+
+            config.OUTPUT_DIR = Path(out_dir)
+            config.WORKSPACE_DIR = config.OUTPUT_DIR / "workspace"
+            config.BLOCKLIST_DIR = config.OUTPUT_DIR / "blocklist"
+            config.BLOCKLIST_DB = config.OUTPUT_DIR / "blocklist.db"
 
         config.ensure_output_dirs()
 
@@ -98,6 +117,12 @@ def _preload():
             import yaml  # noqa: F401
 
             litellm.suppress_debug_info = not _is_verbose
+
+            from .core import events
+            from .core.bin_manager import ensure_binaries
+
+            ensure_binaries()
+            events.preload_start.send("cli")
 
         if cmd in ("record", "run"):
             import imageio_ffmpeg  # noqa: F401
@@ -180,9 +205,7 @@ def cmd_agent(args):
     from .core.key_checker import check_api_keys
 
     check_api_keys(config.AGENT_MODEL)
-    from .core.bin_manager import ensure_binaries
 
-    ensure_binaries()
     from .cli.console import start_cli_listeners
     from .cli.orchestrator import run_agent_cli
     from .core.cancel_standard import CancelToken, StopToken
@@ -203,15 +226,11 @@ def cmd_run(args):
     from .core.key_checker import check_api_keys
 
     check_api_keys(config.AGENT_MODEL, config.RECORDER_AI_MODEL)
+    from .cli.callbacks import get_cli_skip_callback
     from .cli.console import start_cli_listeners
     from .cli.orchestrator import run_agent_cli
-    from .core.bin_manager import ensure_binaries
     from .core.cancel_standard import CancelToken, StopRequestedException, StopToken
     from .core.recorder import run_recording
-
-    ensure_binaries()
-
-    from .cli.callbacks import get_cli_skip_callback
 
     cancel_token = CancelToken()
     stop_token = StopToken()
@@ -375,7 +394,13 @@ def main():
             speed=config.BANNER_SPEED,
         )
 
-    preload_thread.join()
+    if preload_thread.is_alive():
+        from .cli.console import spinner
+
+        with spinner("Initializing sandbox..."):
+            preload_thread.join()
+    else:
+        preload_thread.join()
 
     if _preload_error is not None:
         error(f"Startup init failed: {_preload_error}")

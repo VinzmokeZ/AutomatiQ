@@ -7,6 +7,8 @@ agent_start = agent_signals.signal("agent_start")
 step_start = agent_signals.signal("step_start")
 step_end = agent_signals.signal("step_end")
 agent_done = agent_signals.signal("agent_done")
+preload_start = agent_signals.signal("preload_start")
+preload_end = agent_signals.signal("preload_end")
 
 # User Interaction Events
 prompt_request_start = agent_signals.signal("prompt_request_start")

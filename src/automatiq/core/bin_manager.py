@@ -193,13 +193,16 @@ def _resolve_shim(path: Path) -> Path | None:
     return None
 
 
-def _copy_system_binary(found: str, dest: Path) -> bool:
+def _copy_system_binary(found: str, dest: Path, test_args: list[str] | None = None) -> bool:
     """
     On Mac/Linux: Does nothing! We trust the system PATH.
     On Windows: Resolves shims and securely links the real .exe into our bin cache.
     """
     if sys.platform != "win32":
         return True
+
+    if test_args is None:
+        test_args = ["--version"]
 
     src = Path(found)
     resolved = _resolve_shim(src)
@@ -213,7 +216,13 @@ def _copy_system_binary(found: str, dest: Path) -> bool:
         shutil.copymode(src, dest)
 
     try:
-        subprocess.run([str(dest), "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        subprocess.run(
+            [str(dest)] + test_args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=True,
+        )
         return True
     except (subprocess.SubprocessError, OSError):
         dest.unlink(missing_ok=True)
@@ -230,7 +239,7 @@ def _ensure_busybox(bin_dir: Path, os_name: str, arch: str, progress_callback: C
     if dest.exists():
         return
     found = shutil.which("busybox")
-    if found and _copy_system_binary(found, dest):
+    if found and _copy_system_binary(found, dest, test_args=["--help"]):
         return
     url, _ = _pick_busybox_url(arch)
     _download_file(url, dest, label="busybox", progress_callback=progress_callback)

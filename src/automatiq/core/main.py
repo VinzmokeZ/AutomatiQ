@@ -7,6 +7,7 @@ import os
 import queue
 import sys
 import threading
+import time
 
 import instructor
 import litellm
@@ -37,6 +38,22 @@ from .schema import (
 
 logger = logging.getLogger(__name__)
 litellm.suppress_debug_info = True
+
+_preloaded_sandbox = None
+
+
+@events.preload_start.connect
+def handle_preload_start(sender, **kwargs):
+    global _preloaded_sandbox
+    if _preloaded_sandbox is None:
+        workspace = str(config.WORKSPACE_DIR)
+        os.makedirs(workspace, exist_ok=True)
+        _preloaded_sandbox = AgentSandbox(
+            working_dir=workspace,
+            timeout_seconds=config.SANDBOX_TIMEOUT_SECONDS,
+            bin_path=str(config.BIN_DIR),
+        )
+    events.preload_end.send("core")
 
 
 def run_cancellable(token: CancelToken, fn, *args, **kwargs):
@@ -83,11 +100,17 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
     workspace = str(workspace_dir)
     os.makedirs(workspace, exist_ok=True)
     client = instructor.from_litellm(litellm.completion, mode=instructor.Mode.MD_JSON)
-    sandbox = AgentSandbox(
-        working_dir=workspace,
-        timeout_seconds=config.SANDBOX_TIMEOUT_SECONDS,
-        bin_path=str(config.BIN_DIR),
-    )
+
+    global _preloaded_sandbox
+    if _preloaded_sandbox is not None:
+        sandbox = _preloaded_sandbox
+        _preloaded_sandbox = None
+    else:
+        sandbox = AgentSandbox(
+            working_dir=workspace,
+            timeout_seconds=config.SANDBOX_TIMEOUT_SECONDS,
+            bin_path=str(config.BIN_DIR),
+        )
     global_memory = []
     agent = PromptFactory.create_agent("main", shared_memory=global_memory)
     reading_injection = agent.mode_injections.get(ModeEnum.reading, "")
@@ -262,7 +285,6 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
                     if attempt < MAX_LLM_RETRIES:
                         events.log_warn.send("core", text=f"Retrying in {wait}s ...")
                         events.wait_start.send("core", seconds=wait, reason="Retrying")
-                        import time
 
                         cancelled = False
                         for _ in range(wait):
@@ -320,7 +342,7 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
                                 input=ToolResponse(
                                     tool_response=(
                                         "Hey, it seems you are trying to finish the script while not in building mode. "
-                                        "If you are stuck, or the output is coming, switch to reading or testing mode "
+                                        "If stuck, or the output isn't working, switch to reading or testing mode "
                                         "as you wish. We have only one True RULE: Truth and truth alone."
                                     )
                                 )
@@ -355,6 +377,8 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
                 events.tool_message.send("core", text=f"\n{resp.tool_content.message_to_user}\n")
                 needs_user_input = True
             elif resp.tool == ToolEnum.execute_ipython:
+                ts = time.time()
+                events.log_info.send("core", text=f"start: {ts}")
                 script_to_run = resp.tool_content.ipython_script
                 consecutive_execs += 1
                 cell_counter += 1
@@ -441,6 +465,8 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
                     )
                     awaiting_tool_complete = False
                     continue
+                td = time.time()
+                events.log_info.send("core", text=f"final: {td - ts}")
             elif resp.tool == ToolEnum.switch_mode:
                 target_mode = resp.tool_content.target_mode
                 context_memo = resp.tool_content.context

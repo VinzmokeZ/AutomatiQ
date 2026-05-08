@@ -23,7 +23,6 @@ import sys
 import time
 from pathlib import Path
 
-from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 from rich.text import Text
@@ -260,7 +259,7 @@ def show_startup(
     SHINE_DELAY = 0.0325
 
     final_frame = frames[-1]
-    console = Console()
+    from .console import console
 
     try:
         with Live(console=console, refresh_per_second=30, transient=False) as live:
