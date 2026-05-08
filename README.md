@@ -20,7 +20,7 @@
 # AutomatiQ
 
 > [!Note]
-> **Alpha** 🡒 Things will break and change. Read [VISION.md](https://github.com/StoneSteel27/AutomatiQ/blob/main/VISION.md) to understand why Automatiq exists and where it's headed.
+> **Alpha** ⟶ Things will break and change. Read [VISION.md](https://github.com/StoneSteel27/AutomatiQ/blob/main/VISION.md) to understand why Automatiq exists and where it's headed.
 
 AutomatiQ watches you browse, then an AI agent reverse-engineers your session into a standalone Python automation/extraction script; no manual inspection needed.
 
@@ -30,9 +30,9 @@ AutomatiQ watches you browse, then an AI agent reverse-engineers your session in
   <img src="https://raw.githubusercontent.com/StoneSteel27/AutomatiQ/main/assets/process.svg" alt="AutomatiQ" width="800">
 </p>
 
-1. **Record (Browser Capture)** ⭢ Chrome is launched with CDP instrumentation. Every network request, response body, cookie, and user interaction (clicks, typing, navigation) is recorded with timestamps. Press `Ctrl+C` when you're done.
-2. **Compile (Vision Analysis)** ⭢ The recording is split into per-action video clips. A vision LLM watches each clip and produces structured annotations (what was clicked, what changed, whether the action succeeded). Network requests are decoded, deduplicated, and structured into a workspace dump.
-3. **Agent (Sandbox Execution)** ⭢ An LLM investigator reads the workspace dump, experiments in an isolated Python/IPython environment, and iteratively produces a working script. It can test hypotheses against the live site with guardrails against loops and repetition.
+1. **Record (Browser Capture)** ⟶ Chrome is launched with CDP instrumentation. Every network request, response body, cookie, and user interaction (clicks, typing, navigation) is recorded with timestamps. Press `Ctrl+C` when you're done.
+2. **Compile (Vision Analysis)** ⟶ The recording is split into per-action video clips. A vision LLM watches each clip and produces structured annotations (what was clicked, what changed, whether the action succeeded). Network requests are decoded, deduplicated, and structured into a workspace dump.
+3. **Agent (Sandbox Execution)** ⟶ An LLM investigator reads the workspace dump, experiments in an isolated Python/IPython environment, and iteratively produces a working script. It can test hypotheses against the live site with guardrails against loops and repetition.
 
 ## Getting Started
 
