@@ -39,7 +39,7 @@ You are a Web Automation Investigator. You reverse-engineer recorded browser ses
 ## Tools
 You have three actions each turn:
 1. **`execute_ipython`** — Run Python code or shell commands (`!command`) in a persistent IPython session. State persists across cells.
-2. **`message_to_user`** — Talk to the user. Set `is_final_script=True` ONLY when delivering the final script.
+2. **`final_submit`** — Submit the final Python script once you have verified it in building mode. To communicate with the user, simply speak using standard conversational text in your response.
 3. **`switch_mode`** — Switch your working mode. You have three modes: `reading`, `testing`, `building`. When you switch, write a research memo summarizing what you've learned so far — it will be your own context when you resume in the new mode.
 
 ## Shell Commands
@@ -203,17 +203,16 @@ AGENT_TOOLS = [
         "type": "function",
         "function": {
             "name": "final_submit",
-            "description": "Deliver a message to the user, and optionally submit the final script.",
+            "description": "Submit the final python script once you have successfully built and verified it.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "message_to_user": {"type": "string", "description": "The message to display to the user."},
-                    "is_final_script": {
-                        "type": "boolean",
-                        "description": "Set to True ONLY when this message contains the final deliverable script.",
+                    "final_python_script": {
+                        "type": "string",
+                        "description": "The complete, raw python script you have built and successfully tested.",
                     },
                 },
-                "required": ["message_to_user", "is_final_script"],
+                "required": ["final_python_script"],
             },
         },
     },
@@ -557,10 +556,9 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
 
             # Process the specific tool
             if tool_name == "final_submit":
-                is_final = tool_args.get("is_final_script", False)
-                message_text = tool_args.get("message_to_user", "")
+                script_content = tool_args.get("final_python_script", "")
 
-                if is_final and current_mode != "building":
+                if current_mode != "building":
                     events.log_warn.send("core", text="Final script submitted outside building mode — bouncing back.")
                     messages.append(
                         {
@@ -576,39 +574,30 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
                     )
                     continue
 
-                if is_final:
-                    final_script_bounces += 1
-                    if final_script_bounces <= MAX_FINAL_SCRIPT_BOUNCES:
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": tool_name,
-                                "content": (
-                                    "Hi there, looks like you have created the final script. "
-                                    "I just came here to verify if you have actually tested it or not. "
-                                    "In case the script isn't running, don't worry, just go back to "
-                                    "reading mode or testing mode. They will take care of the validity. "
-                                    "If test and read modes actually say they can't find any way "
-                                    "to make this work, then you can yield before the user that you "
-                                    "can't find any solution. If you are truly confident, I want you to show me "
-                                    "the output of the script you are trying to submit to user."
-                                ),
-                            }
-                        )
-                        continue
-                    final_script_bounces = 0
+                final_script_bounces += 1
+                if final_script_bounces <= MAX_FINAL_SCRIPT_BOUNCES:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_name,
+                            "content": (
+                                "Hi there, looks like you have created the final script. "
+                                "I just came here to verify if you have actually tested it or not. "
+                                "In case the script isn't running, don't worry, just go back to "
+                                "reading mode or testing mode. They will take care of the validity. "
+                                "If test and read modes actually say they can't find any way "
+                                "to make this work, then you can yield before the user that you "
+                                "can't find any solution by writing that in normal text and halting. "
+                                "\nIf you have already tested it, then just submit it again."
+                            ),
+                        }
+                    )
+                    continue
 
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_name,
-                        "content": "Message delivered to user.",
-                    }
-                )
-                events.tool_message.send("core", text=f"\n{message_text}\n")
-                needs_user_input = True
+                events.log_info.send("core", text="Agent submitted the final script.")
+                events.tool_message.send("core", text=f"\n--- FINAL SCRIPT ---\n\n{script_content}\n")
+                break
 
             elif tool_name == "execute_ipython":
                 script_to_run = tool_args.get("ipython_script", "")
