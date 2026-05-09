@@ -375,7 +375,7 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
         return _clean(exc)
 
     def _call_llm(msgs):
-        """Blocking LLM call — runs inside the interruptible wrapper."""
+        """Blocking LLM call - runs inside the interruptible wrapper."""
         kwargs = dict(
             model=config.AGENT_MODEL,
             messages=msgs,
@@ -386,6 +386,11 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
         )
         if config.API_BASE:
             kwargs["api_base"] = config.API_BASE
+
+        # Enable extended thinking/reasoning for models that support it
+        if litellm.supports_reasoning(model=config.AGENT_MODEL):
+            kwargs["reasoning_effort"] = "high"
+
         return litellm.completion(**kwargs)
 
     try:
@@ -496,10 +501,17 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
 
             msg_obj = resp.choices[0].message
             tool_calls = msg_obj.tool_calls
+
+            # Extract reasoning and content natively
+            reasoning = getattr(msg_obj, "reasoning_content", None)
+            content = msg_obj.content or ""
+
             if not tool_calls:
-                messages.append({"role": "assistant", "content": msg_obj.content or ""})
-                if msg_obj.content:
-                    events.agent_thought.send("core", text=msg_obj.content)
+                messages.append(msg_obj.model_dump(exclude_none=True))
+                if reasoning:
+                    events.agent_thought.send("core", text=reasoning)
+                if content:
+                    events.agent_text.send("core", text=content)
                 needs_user_input = True
                 continue
 
@@ -512,8 +524,8 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
 
             events.step_start.send("core", step=step, prompt_tokens=resp.usage.prompt_tokens)
 
-            # The LLM's thought process is now in the normal content field
-            current_thought = msg_obj.content or ""
+            # Deduplicate logic based on both reasoning and content
+            current_thought = f"{reasoning or ''}\n{content}".strip()
 
             if current_thought == prev_thought and current_thought:
                 events.log_warn.send("core", text="Exact duplicate message body detected.")
@@ -538,8 +550,10 @@ def run_agent(input_queue: queue.Queue = None, cancel_token: CancelToken = None)
 
             # Append the LLM's assistant message (contains BOTH text and tool_calls)
             messages.append(msg_obj.model_dump(exclude_none=True))
-            if current_thought:
-                events.agent_thought.send("core", text=current_thought)
+            if reasoning:
+                events.agent_thought.send("core", text=reasoning)
+            if content:
+                events.agent_text.send("core", text=content)
 
             # Process the specific tool
             if tool_name == "final_submit":

@@ -6,6 +6,7 @@ from ..core import events
 from ..core.cancel_standard import CancelToken, StopToken
 from ..core.main import run_agent
 from .console import (
+    agent_markdown,
     code_block,
     countdown,
     error,
@@ -33,6 +34,11 @@ def handle_step_start(sender, step, prompt_tokens, **kwargs):
 @events.agent_thought.connect
 def handle_agent_thought(sender, text, **kwargs):
     think(text)
+
+
+@events.agent_text.connect
+def handle_agent_text(sender, text, **kwargs):
+    agent_markdown(text)
 
 
 @events.tool_message.connect

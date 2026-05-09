@@ -28,6 +28,7 @@ code_exec_error = agent_signals.signal("code_exec_error")
 
 # Thought & Observation Events
 agent_thought = agent_signals.signal("agent_thought")
+agent_text = agent_signals.signal("agent_text")
 tool_message = agent_signals.signal("tool_message")
 mode_switch = agent_signals.signal("mode_switch")
 

@@ -121,6 +121,11 @@ def think(text: str) -> None:
     console.print(quoted)
 
 
+def agent_markdown(text: str) -> None:
+    """Print standard agent text output as free-floating Markdown."""
+    console.print(Markdown(text))
+
+
 def countdown(seconds: int, message: str = "Retrying", cancel_check=None) -> bool:
     """Live countdown on a single line. Returns True if cancelled via *cancel_check*."""
     with Live(
