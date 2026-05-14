@@ -25,7 +25,7 @@ from .guardrails import check_duplicate_thought, check_final_script_bounce, chec
 from .history import compress_history, export_session_logs
 from .ipython_sandbox import AgentSandbox
 from .llm import call_llm_blocking, extract_message
-from .prompts import MODE_INJECTIONS, get_system_prompt
+from .prompts import MODE_INJECTIONS, SYSTEM_PROMPT
 from .tools import AGENT_TOOLS, validate_tool_args
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,7 @@ def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None, target
         )
         sys.exit(1)
 
-    workspace_dir = session_dump.parent
+    workspace_dir = session_dump / "workspace"
     events.log_info.send("core", text=f"Using session at: {session_dump}")
 
     global _preloaded_sandbox
@@ -157,7 +157,7 @@ def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None, target
     # Initial state
     current_mode = "reading"
     messages = [
-        {"role": "system", "content": get_system_prompt(session_dump.name)},
+        {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"{MODE_INJECTIONS['reading']}\n\nSession started. You are in reading mode."},
     ]
 

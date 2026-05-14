@@ -210,12 +210,22 @@ def cmd_record(args):
     from .core.key_checker import check_api_keys
 
     check_api_keys(config.AGENT_MODEL, config.RECORDER_AI_MODEL)
+    from pathlib import Path
+
     from .cli.callbacks import get_cli_skip_callback
     from .cli.console import ask_session_name, start_cli_listeners
     from .core.cancel_standard import CancelToken, StopRequestedException, StopToken
     from .core.recorder import run_recording
+    from .core.recorder.data_compressor import sanitize_filename
 
     session_name = args.name if args.name is not None else ask_session_name()
+    output_dir_name = sanitize_filename(session_name) if session_name else ".tmp_recording"
+
+    config.OUTPUT_DIR = Path.cwd() / output_dir_name
+    config.WORKSPACE_DIR = config.OUTPUT_DIR / "workspace"
+    config.BLOCKLIST_DIR = config.OUTPUT_DIR / "blocklist"
+    config.BLOCKLIST_DB = config.OUTPUT_DIR / "blocklist.db"
+    config.ensure_output_dirs()
 
     cancel_token = CancelToken()
     stop_token = StopToken()
@@ -271,13 +281,23 @@ def cmd_run(args):
     from .core.key_checker import check_api_keys
 
     check_api_keys(config.AGENT_MODEL, config.RECORDER_AI_MODEL)
+    from pathlib import Path
+
     from .cli.callbacks import get_cli_skip_callback
     from .cli.console import ask_session_name, start_cli_listeners
     from .cli.orchestrator import run_agent_cli
     from .core.cancel_standard import CancelToken, StopRequestedException, StopToken
     from .core.recorder import run_recording
+    from .core.recorder.data_compressor import sanitize_filename
 
     session_name = args.name if args.name is not None else ask_session_name()
+    output_dir_name = sanitize_filename(session_name) if session_name else ".tmp_recording"
+
+    config.OUTPUT_DIR = Path.cwd() / output_dir_name
+    config.WORKSPACE_DIR = config.OUTPUT_DIR / "workspace"
+    config.BLOCKLIST_DIR = config.OUTPUT_DIR / "blocklist"
+    config.BLOCKLIST_DB = config.OUTPUT_DIR / "blocklist.db"
+    config.ensure_output_dirs()
 
     cancel_token = CancelToken()
     stop_token = StopToken()

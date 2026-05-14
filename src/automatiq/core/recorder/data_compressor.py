@@ -357,7 +357,7 @@ def calculate_checksum(directory: str) -> dict:
                 continue
             with open(file_path, "rb") as f:
                 file_hash = hashlib.sha256()
-                while chunk := f.read(1024 * 1024):  # 1MB chunks
+                while chunk := f.read(1024 * 1024 * 16):  # 16MB chunks
                     file_hash.update(chunk)
 
             rel_path = os.path.relpath(file_path, directory).replace("\\", "/")
@@ -383,30 +383,50 @@ def compile_workspace(
         actions = session_data.get("actions", [])
         timeline_events = []
 
-        final_session_name = "recording"
-        if session_name:
-            final_session_name = sanitize_filename(session_name)
-        else:
+        # If we used a temporary name, let's figure out the real one
+        if not session_name:
             domain_counts = {}
             for req in requests:
                 domain = urlparse(req.get("url", "")).netloc
                 if domain:
                     domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
+            final_session_name = "recording"
             if domain_counts:
                 most_common = max(domain_counts, key=domain_counts.get)
                 final_session_name = sanitize_filename(most_common)
 
-        base_output_dir = os.path.join(os.getcwd(), final_session_name)
-        output_dir = base_output_dir
-        idx = 1
-        while os.path.exists(output_dir):
-            output_dir = f"{base_output_dir}_{idx:02d}"
-            idx += 1
+            base_output_dir = os.path.join(os.getcwd(), final_session_name)
+            output_dir = base_output_dir
+            idx = 1
+            while os.path.exists(output_dir):
+                output_dir = f"{base_output_dir}_{idx:02d}"
+                idx += 1
 
-        clips_dir = os.path.join(output_dir, "clips")
-        requests_dir = os.path.join(output_dir, "requests")
+            # Move the tmp directory to the final one
+            tmp_dir = str(config.OUTPUT_DIR)
+            if os.path.exists(tmp_dir) and tmp_dir != output_dir:
+                shutil.move(tmp_dir, output_dir)
+
+                # Update config globally so everything works smoothly later
+                from pathlib import Path
+
+                config.OUTPUT_DIR = Path(output_dir)
+                config.WORKSPACE_DIR = config.OUTPUT_DIR / "workspace"
+                config.BLOCKLIST_DIR = config.OUTPUT_DIR / "blocklist"
+                config.BLOCKLIST_DB = config.OUTPUT_DIR / "blocklist.db"
+        else:
+            # We already have a named output directory, handle conflicts if it already exists from a previous run
+            pass  # (Conflict handling should ideally happen before recorder starts, but we use the existing dir for now)
+
+        output_dir = str(config.OUTPUT_DIR)
+        workspace_dir = str(config.WORKSPACE_DIR)
+        session_dump_dir = os.path.join(workspace_dir, "session_dump")
+        clips_dir = os.path.join(session_dump_dir, "clips")
+        requests_dir = os.path.join(session_dump_dir, "requests")
 
         os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(session_dump_dir, exist_ok=True)
         os.makedirs(clips_dir, exist_ok=True)
         os.makedirs(requests_dir, exist_ok=True)
 
@@ -452,11 +472,11 @@ def compile_workspace(
         detection_stats = {}
         if requests:
             logger.info(f"Extracting {len(requests)} network requests and building transactions...")
-            network_events, detection_stats = process_network_requests(requests, requests_dir, output_dir)
+            network_events, detection_stats = process_network_requests(requests, requests_dir, session_dump_dir)
             timeline_events.extend(network_events)
 
         timeline_events.sort(key=lambda x: x["timestamp"])
-        with open(os.path.join(output_dir, "timeline.json"), "w") as f:
+        with open(os.path.join(session_dump_dir, "timeline.json"), "w") as f:
             json.dump(make_serializable(timeline_events), f, indent=2)
 
         session_flow = []
@@ -505,11 +525,11 @@ def compile_workspace(
             if req.get("cookies_sent_details"):
                 summary["statistics"]["with_cookies"] += 1
 
-        with open(os.path.join(output_dir, "SUMMARY.json"), "w") as f:
+        with open(os.path.join(session_dump_dir, "SUMMARY.json"), "w") as f:
             json.dump(make_serializable(summary), f, indent=2)
 
         # Move the video file into the output directory before computing checksums
-        final_video_path = os.path.join(output_dir, "full_record.mp4")
+        final_video_path = os.path.join(session_dump_dir, "full_record.mp4")
         if os.path.exists(full_video_path):
             shutil.move(full_video_path, final_video_path)
 
