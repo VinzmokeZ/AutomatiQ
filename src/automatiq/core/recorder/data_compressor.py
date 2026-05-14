@@ -26,9 +26,6 @@ except ImportError:
     logger.warning("Magika not installed. Skipping advanced content type detection.")
 
 WORKSPACE_DIR = str(config.WORKSPACE_DIR)
-OUTPUT_DIR = os.path.join(WORKSPACE_DIR, "session_dump")
-CLIPS_DIR = os.path.join(OUTPUT_DIR, "clips")
-REQUESTS_DIR = os.path.join(OUTPUT_DIR, "requests")
 
 
 def sanitize_filename(name: str) -> str:
@@ -143,6 +140,7 @@ def merge_and_annotate_actions(
     actions: list[dict],
     full_video_path: str,
     video_start_unix: float,
+    clips_dir: str,
     on_skip_requested: callable = None,
     cancel_token=None,
     stop_token=None,
@@ -196,7 +194,7 @@ def merge_and_annotate_actions(
         clip_end = last_action_time_relative + config.SEGMENT_PAD_SECONDS
 
         clip_filename = f"action_clip_{idx:03d}.mp4"
-        clip_path = os.path.join(CLIPS_DIR, clip_filename)
+        clip_path = os.path.join(clips_dir, clip_filename)
 
         clip_ok = recorder.split_video(full_video_path, clip_path, clip_start, clip_end)
 
@@ -234,7 +232,7 @@ def merge_and_annotate_actions(
     return actions
 
 
-def process_network_requests(requests: list[dict]) -> tuple[list[dict], dict]:
+def process_network_requests(requests: list[dict], requests_dir: str, output_dir: str) -> tuple[list[dict], dict]:
     timeline_requests = []
     detection_stats = {"request_detected": 0, "response_detected": 0, "mismatches": 0}
 
@@ -243,7 +241,7 @@ def process_network_requests(requests: list[dict]) -> tuple[list[dict], dict]:
             parsed_url = urlparse(item.get("url", ""))
             domain = parsed_url.netloc or "unknown"
             folder_name = f"{idx:03d}_{item.get('method', 'UNK')}_{sanitize_filename(domain)}"
-            req_root = os.path.join(REQUESTS_DIR, folder_name)
+            req_root = os.path.join(requests_dir, folder_name)
             os.makedirs(req_root, exist_ok=True)
 
             req_headers = item.get("headers", {})
@@ -334,7 +332,7 @@ def process_network_requests(requests: list[dict]) -> tuple[list[dict], dict]:
         except Exception as e:
             logger.error(f"Failed to process request at index {idx}: {e}")
             logger.exception("Exception occurred")
-            error_filename = os.path.join(OUTPUT_DIR, f"CRASH_REPORT_{idx:03d}.txt")
+            error_filename = os.path.join(output_dir, f"CRASH_REPORT_{idx:03d}.txt")
             try:
                 with open(error_filename, "w", encoding="utf-8") as debug_f:
                     debug_f.write(f"ERROR: {str(e)}\n" + "-" * 50 + "\n")
@@ -347,32 +345,77 @@ def process_network_requests(requests: list[dict]) -> tuple[list[dict], dict]:
     return timeline_requests, detection_stats
 
 
+def calculate_checksum(directory: str) -> dict:
+    import hashlib
+
+    checksums = {}
+    for root, _, files in os.walk(directory):
+        for file in files:
+            file_path = os.path.join(root, file)
+            # Skip metadata itself to avoid self-referential hash changes
+            if file == "session_metadata.json":
+                continue
+            with open(file_path, "rb") as f:
+                file_hash = hashlib.sha256()
+                while chunk := f.read(1024 * 1024):  # 1MB chunks
+                    file_hash.update(chunk)
+
+            rel_path = os.path.relpath(file_path, directory).replace("\\", "/")
+            checksums[rel_path] = file_hash.hexdigest()
+    return checksums
+
+
 def compile_workspace(
+    session_name: str | None,
     session_data: dict,
     full_video_path: str,
     video_start_unix: float,
     on_skip_requested: callable = None,
     cancel_token=None,
     stop_token=None,
-) -> bool:
+) -> tuple[str | None, bool]:
     logger.info("[RULE] Compiling Workspace")
     logger.info("Extracting data, and analyzing video...")
 
     try:
-        if os.path.exists(WORKSPACE_DIR):
-            shutil.rmtree(WORKSPACE_DIR)
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        os.makedirs(CLIPS_DIR, exist_ok=True)
-        os.makedirs(REQUESTS_DIR, exist_ok=True)
-
         metadata = session_data.get("metadata", {})
         requests = session_data.get("requests", [])
         actions = session_data.get("actions", [])
         timeline_events = []
 
+        final_session_name = "recording"
+        if session_name:
+            final_session_name = sanitize_filename(session_name)
+        else:
+            domain_counts = {}
+            for req in requests:
+                domain = urlparse(req.get("url", "")).netloc
+                if domain:
+                    domain_counts[domain] = domain_counts.get(domain, 0) + 1
+            if domain_counts:
+                most_common = max(domain_counts, key=domain_counts.get)
+                final_session_name = sanitize_filename(most_common)
+
+        base_output_dir = os.path.join(os.getcwd(), final_session_name)
+        output_dir = base_output_dir
+        idx = 1
+        while os.path.exists(output_dir):
+            output_dir = f"{base_output_dir}_{idx:02d}"
+            idx += 1
+
+        clips_dir = os.path.join(output_dir, "clips")
+        requests_dir = os.path.join(output_dir, "requests")
+
+        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(clips_dir, exist_ok=True)
+        os.makedirs(requests_dir, exist_ok=True)
+
+        with open(os.path.join(output_dir, "session_metadata.json"), "w") as f:
+            json.dump(make_serializable({"status": "in_progress", "original_metadata": metadata}), f, indent=2)
+
         if actions:
             actions = merge_and_annotate_actions(
-                actions, full_video_path, video_start_unix, on_skip_requested, cancel_token, stop_token
+                actions, full_video_path, video_start_unix, clips_dir, on_skip_requested, cancel_token, stop_token
             )
             for action in actions:
                 timeline_events.append(
@@ -409,11 +452,11 @@ def compile_workspace(
         detection_stats = {}
         if requests:
             logger.info(f"Extracting {len(requests)} network requests and building transactions...")
-            network_events, detection_stats = process_network_requests(requests)
+            network_events, detection_stats = process_network_requests(requests, requests_dir, output_dir)
             timeline_events.extend(network_events)
 
         timeline_events.sort(key=lambda x: x["timestamp"])
-        with open(os.path.join(OUTPUT_DIR, "timeline.json"), "w") as f:
+        with open(os.path.join(output_dir, "timeline.json"), "w") as f:
             json.dump(make_serializable(timeline_events), f, indent=2)
 
         session_flow = []
@@ -462,23 +505,33 @@ def compile_workspace(
             if req.get("cookies_sent_details"):
                 summary["statistics"]["with_cookies"] += 1
 
-        with open(os.path.join(OUTPUT_DIR, "SUMMARY.json"), "w") as f:
+        with open(os.path.join(output_dir, "SUMMARY.json"), "w") as f:
             json.dump(make_serializable(summary), f, indent=2)
 
-        with open(os.path.join(OUTPUT_DIR, "session_metadata.json"), "w") as f:
-            json.dump(make_serializable(metadata), f, indent=2)
+        # Move the video file into the output directory before computing checksums
+        final_video_path = os.path.join(output_dir, "full_record.mp4")
+        if os.path.exists(full_video_path):
+            shutil.move(full_video_path, final_video_path)
 
-        logger.info(f"[SUCCESS] Workspace compiled successfully at {OUTPUT_DIR}")
+        # Compute checksums
+        checksums = calculate_checksum(output_dir)
+
+        # Update and finalize metadata
+        with open(os.path.join(output_dir, "session_metadata.json"), "w") as f:
+            final_meta = {"status": "completed", "checksums_sha256": checksums, "original_metadata": metadata}
+            json.dump(make_serializable(final_meta), f, indent=2)
+
+        logger.info(f"[SUCCESS] Workspace compiled successfully at {output_dir}")
         if MAGIKA_AVAILABLE:
             logger.debug(f"Payloads detected: {detection_stats.get('request_detected', 0)}")
             logger.debug(f"Bodies detected: {detection_stats.get('response_detected', 0)}")
             logger.debug(f"MIME mismatches: {detection_stats.get('mismatches', 0)}")
-        return True
+        return final_video_path, True
 
     except StopRequestedException as e:
         logger.error(str(e))
-        return False
+        return None, False
     except Exception as e:
         logger.error(f"Workspace compilation failed: {e}")
         logger.exception("Exception occurred")
-        return False
+        return None, False

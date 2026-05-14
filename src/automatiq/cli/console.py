@@ -194,6 +194,11 @@ def prompt() -> str:
     return console.input("[bold green]>>> [/bold green]")
 
 
+def ask_session_name() -> str:
+    msg = "[bold cyan]Enter a name for this recording session (leave blank to auto-detect domain): [/bold cyan]"
+    return console.input(msg).strip()
+
+
 def start_cli_listeners(cancel_token: CancelToken, stop_token: StopToken) -> threading.Event | None:
     if not sys.stdin.isatty():
         return None

@@ -6,7 +6,6 @@ Usage: from automatiq.recorder import run_recording; run_recording("https://exam
 import asyncio
 import logging
 import os
-import shutil
 import tempfile
 import urllib.request
 
@@ -43,7 +42,11 @@ def _init_blocklist() -> BlocklistDB:
 
 
 def run_recording(
-    url: str = "about:blank", cancel_token: CancelToken = None, stop_token: StopToken = None, skip_callback=None
+    url: str = "about:blank",
+    session_name: str | None = None,
+    cancel_token: CancelToken = None,
+    stop_token: StopToken = None,
+    skip_callback=None,
 ) -> bool:
     """Run the full recording pipeline: browser -> video -> compile workspace.
 
@@ -104,7 +107,8 @@ def run_recording(
 
         if session_data and video_start_unix:
             try:
-                success = compile_workspace(
+                final_video_path, success = compile_workspace(
+                    session_name=session_name,
                     session_data=session_data,
                     full_video_path=temp_video_path,
                     video_start_unix=video_start_unix,
@@ -115,16 +119,10 @@ def run_recording(
             except Exception as exc:
                 logger.error(f"Workspace compilation raised unexpectedly: {exc}")
                 logger.exception("Exception occurred")
+                success = False
 
-            final_video_path = os.path.join(str(config.WORKSPACE_DIR), "session_dump", "full_record.mp4")
-            if success and os.path.exists(temp_video_path):
-                try:
-                    os.makedirs(os.path.dirname(final_video_path), exist_ok=True)
-                    shutil.move(temp_video_path, final_video_path)
-                    logger.info(f"Full recording saved to {final_video_path}")
-                except OSError as exc:
-                    logger.error(f"Failed to move recording to workspace: {exc}")
-                    logger.exception("Exception occurred")
+            if success and final_video_path:
+                logger.info(f"Full recording saved to {final_video_path}")
         else:
             logger.warning("Session data or video timestamp missing. Skipping compilation.")
 

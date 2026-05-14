@@ -8,6 +8,7 @@ import queue
 import sys
 import threading
 import time
+from pathlib import Path
 
 import litellm
 from litellm.exceptions import (
@@ -24,7 +25,7 @@ from .guardrails import check_duplicate_thought, check_final_script_bounce, chec
 from .history import compress_history, export_session_logs
 from .ipython_sandbox import AgentSandbox
 from .llm import call_llm_blocking, extract_message
-from .prompts import MODE_INJECTIONS, SYSTEM_PROMPT
+from .prompts import MODE_INJECTIONS, get_system_prompt
 from .tools import AGENT_TOOLS, validate_tool_args
 
 logger = logging.getLogger(__name__)
@@ -83,30 +84,72 @@ def run_cancellable(token: CancelToken, fn, *args, **kwargs):
 # -----------------
 
 
-def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None):
+def find_latest_session_dir(target: str | None = None) -> Path | None:
+    if target:
+        p = Path(target)
+        if p.exists() and (p / "session_metadata.json").exists():
+            return p
+        return None
+
+    # Scan current directory
+    cwd = Path.cwd()
+    valid_sessions = []
+    for d in cwd.iterdir():
+        if d.is_dir():
+            meta = d / "session_metadata.json"
+            if meta.exists():
+                try:
+                    with open(meta) as f:
+                        data = json.load(f)
+                        if data.get("status") == "completed":
+                            valid_sessions.append((d, meta.stat().st_mtime))
+                except Exception:
+                    pass
+
+    if not valid_sessions:
+        return None
+
+    # Return the one with the latest modification time
+    valid_sessions.sort(key=lambda x: x[1], reverse=True)
+    return valid_sessions[0][0]
+
+
+def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None, target: str | None = None):
     events.agent_start.send("core")
     """Interactive agent loop. Reads from the workspace produced by the recorder."""
     if cancel_token is None:
         cancel_token = CancelToken()
 
-    workspace_dir = config.WORKSPACE_DIR
-    session_dump = workspace_dir / "session_dump"
-    if not session_dump.exists() or not any(session_dump.iterdir()):
-        events.log_error.send("core", text=f"No recorded session found at {session_dump}")
+    session_dump = find_latest_session_dir(target)
+    if not session_dump:
+        if target:
+            events.log_error.send("core", text=f"No valid completed session found at {target}")
+        else:
+            events.log_error.send("core", text="No valid completed sessions found in the current directory.")
         events.log_info.send(
             "core", text="Run 'automatiq record <url>' first, or use 'automatiq run <url>' for one-shot."
         )
         sys.exit(1)
-    workspace = str(workspace_dir)
-    os.makedirs(workspace, exist_ok=True)
+
+    workspace_dir = session_dump.parent
+    events.log_info.send("core", text=f"Using session at: {session_dump}")
 
     global _preloaded_sandbox
-    if _preloaded_sandbox is not None:
+    if _preloaded_sandbox:
         sandbox = _preloaded_sandbox
+        # If preloaded sandbox was set to WORKSPACE_DIR, but our session is elsewhere:
+        # We need to recreate it if the paths don't match exactly.
+        if Path(sandbox.working_dir).absolute() != workspace_dir.absolute():
+            sandbox.close()
+            sandbox = AgentSandbox(
+                working_dir=str(workspace_dir),
+                timeout_seconds=config.SANDBOX_TIMEOUT_SECONDS,
+                bin_path=str(config.BIN_DIR),
+            )
         _preloaded_sandbox = None
     else:
         sandbox = AgentSandbox(
-            working_dir=workspace,
+            working_dir=str(workspace_dir),
             timeout_seconds=config.SANDBOX_TIMEOUT_SECONDS,
             bin_path=str(config.BIN_DIR),
         )
@@ -114,7 +157,7 @@ def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None):
     # Initial state
     current_mode = "reading"
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": get_system_prompt(session_dump.name)},
         {"role": "user", "content": f"{MODE_INJECTIONS['reading']}\n\nSession started. You are in reading mode."},
     ]
 

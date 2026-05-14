@@ -211,16 +211,22 @@ def cmd_record(args):
 
     check_api_keys(config.AGENT_MODEL, config.RECORDER_AI_MODEL)
     from .cli.callbacks import get_cli_skip_callback
-    from .cli.console import start_cli_listeners
+    from .cli.console import ask_session_name, start_cli_listeners
     from .core.cancel_standard import CancelToken, StopRequestedException, StopToken
     from .core.recorder import run_recording
+
+    session_name = args.name if args.name is not None else ask_session_name()
 
     cancel_token = CancelToken()
     stop_token = StopToken()
     monitor = start_cli_listeners(cancel_token, stop_token)
     try:
         success = run_recording(
-            url=args.url, cancel_token=cancel_token, stop_token=stop_token, skip_callback=get_cli_skip_callback()
+            url=args.url,
+            session_name=session_name,
+            cancel_token=cancel_token,
+            stop_token=stop_token,
+            skip_callback=get_cli_skip_callback(),
         )
     except KeyboardInterrupt:
         from .cli.console import warn
@@ -253,7 +259,7 @@ def cmd_agent(args):
     stop_token = StopToken()
     monitor = start_cli_listeners(cancel_token, stop_token)
     try:
-        run_agent_cli(cancel_token=cancel_token, stop_token=stop_token)
+        run_agent_cli(cancel_token=cancel_token, stop_token=stop_token, target=args.target)
     finally:
         if monitor:
             monitor.clear()
@@ -266,17 +272,23 @@ def cmd_run(args):
 
     check_api_keys(config.AGENT_MODEL, config.RECORDER_AI_MODEL)
     from .cli.callbacks import get_cli_skip_callback
-    from .cli.console import start_cli_listeners
+    from .cli.console import ask_session_name, start_cli_listeners
     from .cli.orchestrator import run_agent_cli
     from .core.cancel_standard import CancelToken, StopRequestedException, StopToken
     from .core.recorder import run_recording
+
+    session_name = args.name if args.name is not None else ask_session_name()
 
     cancel_token = CancelToken()
     stop_token = StopToken()
     monitor = start_cli_listeners(cancel_token, stop_token)
     try:
         success = run_recording(
-            url=args.url, cancel_token=cancel_token, stop_token=stop_token, skip_callback=get_cli_skip_callback()
+            url=args.url,
+            session_name=session_name,
+            cancel_token=cancel_token,
+            stop_token=stop_token,
+            skip_callback=get_cli_skip_callback(),
         )
     except KeyboardInterrupt:
         from .cli.console import warn
@@ -487,15 +499,18 @@ def main():
 
     p_record = subparsers.add_parser("record", add_help=False)
     p_record.add_argument("url", nargs="?", default="about:blank")
+    p_record.add_argument("--name", type=str, default=None, help="Name of the session folder")
     _add_common_flags(p_record, include_recorder_model=True)
     p_record.set_defaults(func=cmd_record)
 
     p_agent = subparsers.add_parser("agent", add_help=False)
     _add_common_flags(p_agent)
+    p_agent.add_argument("--target", type=str, default=None, help="Path to the session folder to agentic run on")
     p_agent.set_defaults(func=cmd_agent)
 
     p_run = subparsers.add_parser("run", add_help=False)
     p_run.add_argument("url", nargs="?", default="about:blank")
+    p_run.add_argument("--name", type=str, default=None, help="Name of the session folder")
     _add_common_flags(p_run, include_recorder_model=True)
     p_run.set_defaults(func=cmd_run)
 

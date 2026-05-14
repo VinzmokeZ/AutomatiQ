@@ -111,7 +111,7 @@ def handle_log_traceback(sender, **kwargs):
     log_exception()
 
 
-def run_agent_cli(cancel_token: CancelToken = None, stop_token: StopToken = None):
+def run_agent_cli(cancel_token: CancelToken = None, stop_token: StopToken = None, target: str | None = None):
     if cancel_token is None:
         cancel_token = CancelToken()
     if stop_token is None:
@@ -151,7 +151,7 @@ def run_agent_cli(cancel_token: CancelToken = None, stop_token: StopToken = None
     def backend_worker():
         try:
             # We don't have run_agent signature yet, assuming it only takes cancel_token right now
-            run_agent(input_queue=input_queue, cancel_token=cancel_token)
+            run_agent(input_queue=input_queue, cancel_token=cancel_token, target=target)
         except Exception as exc:
             error(f"Agent loop crashed: {exc}")
             log_exception()
