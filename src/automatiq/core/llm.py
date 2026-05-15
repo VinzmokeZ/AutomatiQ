@@ -1,4 +1,3 @@
-import difflib
 import json
 import logging
 
@@ -35,59 +34,20 @@ def extract_message(exc) -> str:
     return _clean(exc)
 
 
-def _known_models_for_provider(provider: str) -> list[str]:
-    """Return LiteLLM's known model names for a given provider prefix, stripped of the prefix."""
-    try:
-        models = litellm.models_by_provider.get(provider, [])
-        prefix = f"{provider}/"
-        return sorted([m[len(prefix) :] if m.startswith(prefix) else m for m in models])
-    except Exception:
-        return []
-
-
-def _build_model_help(model: str) -> str:
-    """Build a helpful, actionable error message for an invalid model string."""
+def _build_model_help(model: str, original_msg: str) -> str:
+    """Build a simple error message for an invalid or unsupported model."""
     if "/" not in model:
-        providers = sorted(getattr(litellm, "provider_list", []))
-        sample = ", ".join(providers[:8])
         return (
-            f"Invalid model string '{model}'. "
-            f"Expected format: 'provider/model-name' "
-            f"(e.g. 'gemini/gemini-2.5-flash', 'openai/gpt-4o'). "
-            f"Known providers include: {sample}. "
-            f"Update [models] agent in ~/.automatiq/config.toml."
+            f"Invalid model string '{model}'. Expected format: 'provider/model-name' "
+            f"(e.g. 'gemini/gemini-2.5-flash').\n"
+            f"Original error: {original_msg}"
         )
 
-    provider, raw_model = model.split("/", 1)
-
-    if provider == "github_copilot":
-        known = _known_models_for_provider(provider)
-        suggestions = difflib.get_close_matches(raw_model, known, n=3, cutoff=0.3)
-        hint = f" Did you mean: {', '.join(f'github_copilot/{m}' for m in suggestions)}?" if suggestions else ""
-        return (
-            f"Unknown GitHub Copilot model '{model}'.{hint} "
-            f"GitHub Copilot uses OAuth device flow — no API key needed, "
-            f"but the model name must match exactly. "
-            f"Known Copilot models: {', '.join(f'github_copilot/{m}' for m in known[:6]) or 'check LiteLLM docs'}."
-        )
-
-    known = _known_models_for_provider(provider)
-    if not known:
-        providers = sorted(getattr(litellm, "provider_list", []))
-        suggestions = difflib.get_close_matches(provider, providers, n=3, cutoff=0.4)
-        hint = f" Did you mean provider: {', '.join(suggestions)}?" if suggestions else ""
-        return f"Unknown provider prefix '{provider}' in model '{model}'.{hint} Expected format: 'provider/model-name'."
-
-    suggestions = difflib.get_close_matches(raw_model, known, n=3, cutoff=0.3)
-    if suggestions:
-        return (
-            f"Unknown model '{model}'. Did you mean: "
-            f"{', '.join(f'{provider}/{m}' for m in suggestions)}? "
-            f"Check your config.toml or --model flag."
-        )
-
-    preview = ", ".join(f"{provider}/{m}" for m in known[:6])
-    return f"Unknown model '{model}' for provider '{provider}'. Some known models: {preview}."
+    return (
+        f"The requested model '{model}' either does not exist, is not supported by the provider, "
+        f"or there is a problem on their server side.\n"
+        f"Original error: {original_msg}"
+    )
 
 
 def _is_model_error(exc: Exception) -> bool:
@@ -124,5 +84,6 @@ def call_llm_blocking(msgs: list[dict], tools: list[dict]):
         return litellm.completion(**kwargs)
     except Exception as exc:
         if _is_model_error(exc):
-            raise ValueError(_build_model_help(config.AGENT_MODEL)) from exc
+            msg = extract_message(exc)
+            raise ValueError(_build_model_help(config.AGENT_MODEL, msg)) from exc
         raise
