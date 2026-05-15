@@ -26,6 +26,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 from rich.theme import Theme
 
+from ..core import events
 from ..core.cancel_standard import CancelToken, StopToken
 
 _theme = Theme(
@@ -285,3 +286,35 @@ def start_cli_listeners(cancel_token: CancelToken, stop_token: StopToken) -> thr
     t = threading.Thread(target=_listen, daemon=True)
     t.start()
     return active
+
+
+# ---------------------------------------------------------------------------
+# Global Event Listeners for UI updates
+# ---------------------------------------------------------------------------
+
+
+@events.log_info.connect
+def handle_log_info(sender, text, **kwargs):
+    if text.startswith("[ACTION]"):
+        action(text.replace("[ACTION]", "", 1).strip())
+    elif text.startswith("[VIDEO]"):
+        video(text.replace("[VIDEO]", "", 1).strip())
+    elif text.startswith("[AI]"):
+        ai(text.replace("[AI]", "", 1).strip())
+    else:
+        info(text)
+
+
+@events.log_warn.connect
+def handle_log_warn(sender, text, **kwargs):
+    warn(text)
+
+
+@events.log_error.connect
+def handle_log_error(sender, text, **kwargs):
+    error(text)
+
+
+@events.log_traceback.connect
+def handle_log_traceback(sender, **kwargs):
+    log_exception()

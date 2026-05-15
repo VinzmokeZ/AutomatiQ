@@ -17,7 +17,6 @@ from .console import (
     spinner,
     step_info,
     think,
-    warn,
 )
 
 logger = logging.getLogger(__name__)
@@ -89,26 +88,6 @@ def handle_llm_request_end(sender, **kwargs):
     if _active_spinner:
         _active_spinner.__exit__(None, None, None)
         _active_spinner = None
-
-
-@events.log_info.connect
-def handle_log_info(sender, text, **kwargs):
-    info(text)
-
-
-@events.log_warn.connect
-def handle_log_warn(sender, text, **kwargs):
-    warn(text)
-
-
-@events.log_error.connect
-def handle_log_error(sender, text, **kwargs):
-    error(text)
-
-
-@events.log_traceback.connect
-def handle_log_traceback(sender, **kwargs):
-    log_exception()
 
 
 def run_agent_cli(cancel_token: CancelToken = None, stop_token: StopToken = None, target: str | None = None):
