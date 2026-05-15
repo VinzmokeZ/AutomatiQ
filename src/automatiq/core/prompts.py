@@ -13,15 +13,15 @@ You have three actions each turn:
 3. **`switch_mode`** — Switch your working mode. You have three modes: `reading`, `testing`, `building`. When you switch, write a research memo summarizing what you've learned so far — it will be your own context when you resume in the new mode.
 
 ## Shell Commands & Data Versatility
-Via `!command`: `rg` (ripgrep), `jq`, `gron`, `grep`, `ls`, `cat`, `head`, `tail`, `sort`, `uniq`, `wc`, `awk`, `tr`, `base64`, `sed`, `strings`, `hexdump`.
+Via `!command`: `rg` (ripgrep), `gron`, `jq`, `grep`, `ls`, `cat`, `head`, `tail`, `sort`, `uniq`, `wc`, `awk`, `tr`, `base64`, `sed`, `strings`, `hexdump`.
 Prefer shell one-liners over custom Python loops for fast searching across the dump. Use Python primarily for parsing complex responses, HTTP requests, and assembling the final script.
 
 ### Tool Cheat Sheet
 - **Variable Interpolation**: To pass Python variables into shell commands, use the Jinja-style double-bracket syntax `!cmd {{var}}`. Note: Single braces `{}` are passed as literal text (useful for `awk` or `rg`). If you need literal `{{` or `}}` in a shell command, escape them like `{{ "{{" }}` or `{{ "}}" }}`.
 - **Environment Variables**: Use the `$` sign for standard shell environment variables (e.g., `$var` or `$PATH`). They are evaluated by the shell, not Python.
-- **`jq`**: Command-line JSON processor. `contains` throws errors if used on objects. Use `select()` for filtering, `-c` for compact output, and `keys` to explore structure. Example: `!cat file.json | jq -c '.[] | select(.id == 1)'`
+- **`gron`**: Your primary tool for exploring JSON. Makes JSON greppable by transforming it into discrete assignments. ALWAYS use this first when encountering unknown JSON to discover its structure. Perfect for JSON flattening/grepping (e.g., `!gron file.json | rg -i "key"`). If it fails, fallback to `rg`, `strings`, or `hexdump` for non-JSON or broken data.
 - **`rg`**: Ripgrep, a fast line-oriented search tool. Prefer `rg` over `grep`. Use `-C` for context lines. Example: `!rg -C 2 "search_term" session_dump/`
-- **`gron`**: Makes JSON greppable by transforming it into discrete assignments, which helps to explore JSON. Perfect for JSON flattening/grepping (e.g., `!gron file.json | rg "key"`), but **ONLY for JSON files**. If it fails, fallback to `rg`, `strings`, or `hexdump` for non-JSON or broken data.
+- **`jq`**: Command-line JSON processor. Use ONLY when you already know the exact schema of the JSON file and need to extract specific paths. `contains` throws errors if used on objects. Use `select()` for filtering and `-c` for compact output. Do NOT use for initial exploration. Example: `!cat file.json | jq -c '.[] | select(.id == 1)'`
 
 ### Tips to handle single large line files(eg: minified obfuscated js files)
 use `!rg -i -o '.{0,200}intersted_string.{0,200}' file.js`
@@ -29,9 +29,9 @@ use `!rg -i -o '.{0,200}intersted_string.{0,200}' file.js`
 this would be able to help you in dire scenarios, as tools like `grep` and `rg` cant be used in large single line file.
 
 ## How to explore JSON Outputs
-To prevent massive output dumps when searching, use `gron` to flatten JSON structures before searching with `rg`.
+To prevent massive output dumps when searching, you MUST use `gron` as your default tool to flatten unknown JSON structures before searching with `rg`.
 Flattening JSON makes it easily searchable line-by-line, which inherently reduces massive outputs by surfacing
-only the relevant paths instead of outputting entire unreadable JSON trees. If your output still hits the ~20KB cap,
+only the relevant paths instead of outputting entire unreadable JSON trees. Avoid using `jq` unless you already know the exact schema. If your output still hits the ~20KB cap,
 use `%view_output Cell_N --offset M` to paginate. **Never draw conclusions from truncated output.**
 Always read the rest first.
 
@@ -107,10 +107,10 @@ MODE_INJECTIONS = {
 Build your understanding of what happened in the recorded session. Explore the session dump. Read files, grep, follow values(tokens, keys, cookies) that help to recreate the goal request.
 
 ### Exploration Rules:
-* To explore the dump, use `gron` to flatten JSON structures before searching with `rg`, which inherently prevents massive output dumps. Remember `gron` is ONLY for exploring and grepping JSON files.
+* To explore the dump, you MUST use `gron` to flatten JSON structures before searching with `rg`, which inherently prevents massive output dumps. Remember `gron` is the absolute first step for exploring unknown JSON files. Avoid `jq` for exploration.
 * To handle single large line files(eg: minified obfuscated js files) use `!rg -i -o '.{0,200}intersted_string.{0,200}' --glob file.js`, here -i is case-insensitive, --glob is for catching file path patterns like `*.js`
 * You will frequently encounter trash or broken data; remain versatile and fallback to `rg`, `grep`, `strings`, or `hexdump` instead of writing custom Python loops.
-* Inspect before you assume. Never blindly guess data structures. Always inspect the shape first using `gron` or `print(data.keys())` before attempt to extract specific keys.
+* Inspect before you assume. Never blindly guess data structures. Always inspect the shape first using `gron` (preferred) or `print(data.keys())` before attempt to extract specific keys.
 
 ### State Transitions & Interactions:
 * When you have specific beliefs worth testing against the live site, switch to **testing mode** and write down what you've learned.

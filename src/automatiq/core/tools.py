@@ -94,13 +94,11 @@ and custom sandbox commands:
 
 ### Powerful Shell Tools:
 You have access to powerful shell tools via `!` prefix:
-* - **jq**: Command-line JSON processor.
-  Example: `!cat file.json | jq -c '.[] | select(.id == 1)'`,Useful if known the file before
+* - **gron**: Your primary tool for exploring JSON. Makes JSON greppable. ALWAYS use this first when encountering unknown JSON. Example: `!gron file.json | rg -i 'token'`.
 * - **rg**: Ripgrep, a fast line-oriented search tool.
   * Example: `!rg -C 2 'search_term' session_dump/`
   * To navigate large single line files(eg:minified files), use: `!rg -i -o '.{0,200}intersted_string.{0,200}' file.js`
-* - **gron**: Makes JSON greppable and helps to probe unknown json.
-  Example: `!gron file.json | rg 'key'` gron is very helpful to explore unknown JSON, eg: `!gron file.json`
+* - **jq**: Command-line JSON processor. Use ONLY when you already know the exact schema of the JSON file and need to extract specific paths. Do NOT use for initial exploration. Example: `!cat file.json | jq -c '.data.items[]'`.
 
 ### Execution Rules:
 Code must be syntactically complete — no dangling blocks or unclosed brackets.
