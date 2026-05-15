@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 
 import yaml
 
@@ -57,7 +58,7 @@ def compress_history(messages: list[dict], cutoff_turn=20) -> list[dict]:
     return compressed
 
 
-def export_session_logs(messages: list[dict]):
+def export_session_logs(messages: list[dict], session_name: str = "unknown"):
     """Write session logs to output/history/."""
 
     class _SessionDumper(yaml.Dumper):
@@ -69,18 +70,20 @@ def export_session_logs(messages: list[dict]):
         return dumper.represent_scalar("tag:yaml.org,2002:str", data)
 
     _SessionDumper.add_representer(str, multiline_presenter)
-    history_dir = str(config.HISTORY_DIR)
-    os.makedirs(history_dir, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target_dir = os.path.join(str(config.HISTORY_DIR), f"{session_name}_{timestamp}")
+    os.makedirs(target_dir, exist_ok=True)
 
     # Save the full trace
-    uncompressed_path = os.path.join(history_dir, "messages_full.yaml")
+    uncompressed_path = os.path.join(target_dir, "messages_full.yaml")
     with open(uncompressed_path, "w", encoding="utf-8") as f:
         yaml.dump(messages, f, Dumper=_SessionDumper, sort_keys=False, allow_unicode=True)
     logger.info(f"Saved full session history to {uncompressed_path}")
 
     # Save the compressed version exactly as the LLM saw it
     compressed = compress_history(messages, cutoff_turn=20)
-    compressed_path = os.path.join(history_dir, "messages_compressed.yaml")
+    compressed_path = os.path.join(target_dir, "messages_compressed.yaml")
     with open(compressed_path, "w", encoding="utf-8") as f:
         yaml.dump(compressed, f, Dumper=_SessionDumper, sort_keys=False, allow_unicode=True)
     logger.info(f"Saved compressed session history to {compressed_path}")

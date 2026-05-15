@@ -515,7 +515,7 @@ def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None, target
         sandbox.cancel()
     finally:
         try:
-            export_session_logs(messages)
+            export_session_logs(messages, session_dump.name)
         except Exception as exc:
             events.log_error.send("core", text=f"Failed to save session logs: {exc}")
             events.log_traceback.send("core")
