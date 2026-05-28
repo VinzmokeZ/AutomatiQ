@@ -558,6 +558,14 @@ def compile_workspace(
             final_video_path = os.path.join(final_output_dir, "workspace", "session_dump", "full_record.mp4")
 
         events.log_info.send("recorder", text=f"[SUCCESS] Workspace compiled successfully at {final_output_dir}")
+
+        try:
+            from ...cli.console import rename_file_logger
+
+            rename_file_logger(os.path.basename(final_output_dir))
+        except Exception as e:
+            events.log_warn.send("recorder", text=f"Could not rename log file to match session: {e}")
+
         return final_video_path, True
 
     except StopRequestedException as e:
