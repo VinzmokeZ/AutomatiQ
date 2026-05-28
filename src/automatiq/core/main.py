@@ -548,7 +548,13 @@ def run_agent(
         sandbox.cancel()
     finally:
         try:
-            export_session_logs(messages, session_dump.name)
+            folder_name = export_session_logs(messages, session_dump.name)
+            try:
+                from ..cli.console import rename_file_logger
+
+                rename_file_logger(folder_name)
+            except Exception as e:
+                events.log_warn.send("core", text=f"Could not rename log file: {e}")
         except Exception as exc:
             events.log_error.send("core", text=f"Failed to save session logs: {exc}")
             events.log_traceback.send("core")

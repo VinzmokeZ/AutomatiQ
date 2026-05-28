@@ -90,6 +90,28 @@ def init_file_logger(logs_dir: str) -> None:
     _file_logger.addHandler(handler)
 
 
+def rename_file_logger(new_base_name: str) -> None:
+    """Rename the active log file to match the provided base name."""
+    global _file_logger
+    if not _file_logger:
+        return
+
+    for handler in _file_logger.handlers:
+        if isinstance(handler, logging.FileHandler):
+            old_path = handler.baseFilename
+            handler.close()
+            new_path = os.path.join(os.path.dirname(old_path), f"{new_base_name}.log")
+            try:
+                os.rename(old_path, new_path)
+                handler.baseFilename = new_path
+                handler.stream = handler._open()
+            except Exception as e:
+                # Fallback if rename fails
+                handler.stream = handler._open()
+                _file_logger.error(f"Failed to rename log file to {new_base_name}: {e}")
+            break
+
+
 def _log(level: int, msg: str) -> None:
     if _file_logger:
         _file_logger.log(level, msg)

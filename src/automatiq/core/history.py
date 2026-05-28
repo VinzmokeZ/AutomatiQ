@@ -153,8 +153,8 @@ def compress_history(messages: list[dict], cutoff_turn=10) -> list[dict]:
     return compressed
 
 
-def export_session_logs(messages: list[dict], session_name: str = "unknown"):
-    """Write session logs to output/history/."""
+def export_session_logs(messages: list[dict], session_name: str = "unknown") -> str:
+    """Write session logs to output/history/ and return the folder name."""
 
     class _SessionDumper(yaml.Dumper):
         pass
@@ -167,7 +167,8 @@ def export_session_logs(messages: list[dict], session_name: str = "unknown"):
     _SessionDumper.add_representer(str, multiline_presenter)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    target_dir = os.path.join(str(config.HISTORY_DIR), f"{session_name}_{timestamp}")
+    folder_name = f"{session_name}_{timestamp}"
+    target_dir = os.path.join(str(config.HISTORY_DIR), folder_name)
     os.makedirs(target_dir, exist_ok=True)
 
     # Save the full trace
@@ -182,3 +183,5 @@ def export_session_logs(messages: list[dict], session_name: str = "unknown"):
     with open(compressed_path, "w", encoding="utf-8") as f:
         yaml.dump(compressed, f, Dumper=_SessionDumper, sort_keys=False, allow_unicode=True)
     logger.info(f"Saved compressed session history to {compressed_path}")
+
+    return folder_name
