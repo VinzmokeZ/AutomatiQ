@@ -118,7 +118,7 @@ def run_agent_cli(cancel_token: CancelToken = None, stop_token: StopToken = None
     def handle_prompt_request_start(sender, **kwargs):
         global _first_prompt
         if _first_prompt:
-            info("Type in q to quit | Esc to cancel processing | Ctrl+Enter for newline")
+            info("Type in q to quit | Esc to cancel processing | Ctrl+Enter for new-line")
             _first_prompt = False
 
         try:
@@ -130,7 +130,12 @@ def run_agent_cli(cancel_token: CancelToken = None, stop_token: StopToken = None
     def backend_worker():
         try:
             # We don't have run_agent signature yet, assuming it only takes cancel_token right now
-            run_agent(input_queue=input_queue, cancel_token=cancel_token, target=target)
+            run_agent(
+                input_queue=input_queue,
+                cancel_token=cancel_token,
+                stop_token=stop_token,
+                target=target,
+            )
         except Exception as exc:
             error(f"Agent loop crashed: {exc}")
             log_exception()

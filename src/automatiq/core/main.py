@@ -21,7 +21,12 @@ from litellm.exceptions import (
 )
 
 from . import config, events
-from .cancel_standard import CancelRequestedException, CancelToken
+from .cancel_standard import (
+    CancelRequestedException,
+    CancelToken,
+    StopRequestedException,
+    StopToken,
+)
 from .guardrails import check_duplicate_thought, check_final_script_bounce, check_repeated_execution
 from .history import compress_history, export_session_logs
 from .ipython_sandbox import AgentSandbox
@@ -54,8 +59,8 @@ def handle_preload_start(sender, **kwargs):
     events.preload_end.send("core")
 
 
-def run_cancellable(token: CancelToken, fn, *args, **kwargs):
-    """Run *fn* in a thread, returning early if *token* is cancelled."""
+def run_cancellable(token: CancelToken, fn, *args, stop_token: StopToken = None, **kwargs):
+    """Run *fn* in a thread, returning early if *token* is cancelled or *stop_token* is stopped."""
     result_box = [None]
     error_box = [None]
     done = threading.Event()
@@ -75,6 +80,8 @@ def run_cancellable(token: CancelToken, fn, *args, **kwargs):
         if token.is_cancelled():
             token.reset()
             raise CancelRequestedException("Cancelled via token")
+        if stop_token and stop_token.is_stopped():
+            raise StopRequestedException("Aborted via stop token")
         done.wait(timeout=0.15)
     if error_box[0] is not None:
         raise error_box[0]
@@ -116,7 +123,12 @@ def find_latest_session_dir(target: str | None = None) -> Path | None:
     return valid_sessions[0][0]
 
 
-def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None, target: str | None = None):
+def run_agent(
+    input_queue: queue.Queue,
+    cancel_token: CancelToken = None,
+    stop_token: StopToken = None,
+    target: str | None = None,
+):
     events.agent_start.send("core")
     """Interactive agent loop. Reads from the workspace produced by the recorder."""
     if cancel_token is None:
@@ -184,6 +196,9 @@ def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None, target
 
     try:
         while True:
+            if stop_token and stop_token.is_stopped():
+                raise StopRequestedException("Aborted via stop token")
+
             if sandbox.cancel_result is not None:
                 cr = sandbox._cancel_result
                 sandbox._cancel_result = None
@@ -254,7 +269,9 @@ def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None, target
                 try:
                     events.llm_request_start.send("core")
                     try:
-                        resp = run_cancellable(cancel_token, call_llm_blocking, compiled_messages, AGENT_TOOLS)
+                        resp = run_cancellable(
+                            cancel_token, call_llm_blocking, compiled_messages, AGENT_TOOLS, stop_token=stop_token
+                        )
                     finally:
                         events.llm_request_end.send("core")
                     break
@@ -460,7 +477,7 @@ def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None, target
                 try:
                     events.code_exec_start.send("core", script=display_script)
                     try:
-                        scr = run_cancellable(cancel_token, sandbox.execute, script_to_run)
+                        scr = run_cancellable(cancel_token, sandbox.execute, script_to_run, stop_token=stop_token)
                     finally:
                         events.code_exec_end.send("core")
                 except CancelRequestedException:
@@ -522,6 +539,9 @@ def run_agent(input_queue: queue.Queue, cancel_token: CancelToken = None, target
                 )
                 awaiting_mode_switch = True
 
+    except StopRequestedException:
+        events.log_info.send("core", text="Agent loop stopped by user.")
+        sandbox.cancel()
     except Exception as exc:
         events.log_error.send("core", text=f"Unexpected error: {exc}")
         events.log_traceback.send("core")
