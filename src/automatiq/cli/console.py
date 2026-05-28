@@ -16,6 +16,20 @@ import time
 import traceback
 from datetime import datetime
 
+try:
+    import readline  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.formatted_text import HTML
+    from prompt_toolkit.key_binding import KeyBindings
+
+    HAS_PT = True
+except ImportError:
+    HAS_PT = False
+
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
@@ -191,21 +205,147 @@ def spinner(message: str = "Working..."):
     return console.status(f"[dim]{message}[/dim]", spinner="aesthetic", spinner_style="cyan")
 
 
+_original_termios = None
+_stdin_fd = None
+_active_listener = None
+
+
+def restore_terminal() -> None:
+    global _original_termios, _stdin_fd
+    if _original_termios is not None and _stdin_fd is not None:
+        try:
+            import termios
+
+            termios.tcsetattr(_stdin_fd, termios.TCSADRAIN, _original_termios)
+            termios.tcflush(_stdin_fd, termios.TCIFLUSH)
+        except Exception:
+            pass
+
+
+class CLIListener:
+    """Wrapper around threading.Event to cleanly stop/pause the listener thread and restore terminal."""
+
+    def __init__(
+        self,
+        active_event: threading.Event,
+        thread: threading.Thread,
+        paused_event: threading.Event,
+        paused_ack_event: threading.Event,
+    ):
+        self._active_event = active_event
+        self._thread = thread
+        self._paused_event = paused_event
+        self._paused_ack_event = paused_ack_event
+
+    def pause(self) -> None:
+        if self._thread and self._thread.is_alive():
+            self._paused_event.set()
+            self._paused_ack_event.wait(timeout=1.0)
+
+    def resume(self) -> None:
+        self._paused_event.clear()
+
+    def clear(self) -> None:
+        global _active_listener
+        if _active_listener is self:
+            _active_listener = None
+        self._active_event.clear()
+        self._paused_event.clear()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=0.5)
+        restore_terminal()
+
+    def is_set(self) -> bool:
+        return self._active_event.is_set()
+
+    def __bool__(self) -> bool:
+        return True
+
+
+def get_prompt_toolkit_bindings():
+    kb = KeyBindings()
+
+    # Alt+Enter or Esc then Enter inserts a newline
+    @kb.add("escape", "enter")
+    def _(event):
+        event.current_buffer.insert_text("\n")
+
+    # Normal Enter submits the entire buffer
+    @kb.add("enter")
+    def _(event):
+        event.current_buffer.validate_and_handle()
+
+    return kb
+
+
+def prompt_continuation(width, line_number, is_soft_wrap):
+    return "." * (width - 1) + " "
+
+
 def prompt() -> str:
-    return console.input("[bold green]>>> [/bold green]")
+    global _active_listener
+    if _active_listener:
+        _active_listener.pause()
+    try:
+        # Give asynchronous Rich spinners time to fully exit and clear lines
+        time.sleep(0.1)
+        if HAS_PT:
+            return pt_prompt(
+                HTML("<ansigreen><bold>&gt;&gt;&gt; </bold></ansigreen>"),
+                multiline=True,
+                prompt_continuation=prompt_continuation,
+                key_bindings=get_prompt_toolkit_bindings(),
+            )
+        else:
+            if os.name != "nt":
+                return input("\x01\033[1;32m\x02>>> \x01\033[0m\x02")
+            else:
+                return console.input("[bold green]>>> [/bold green]")
+    finally:
+        if _active_listener:
+            _active_listener.resume()
 
 
 def ask_session_name() -> str:
-    msg = "[bold cyan]Enter a name for this recording session (leave blank to auto-detect domain): [/bold cyan]"
-    return console.input(msg).strip()
+    global _active_listener
+    if _active_listener:
+        _active_listener.pause()
+    try:
+        # Give asynchronous Rich spinners time to fully exit and clear lines
+        time.sleep(0.1)
+        if HAS_PT:
+            return pt_prompt(
+                HTML(
+                    "<ansicyan><bold>Enter a name for this recording session "
+                    "(leave blank to auto-detect domain): </bold></ansicyan>"
+                )
+            ).strip()
+        else:
+            if os.name != "nt":
+                p = (
+                    "\x01\033[1;36m\x02Enter a name for this recording session "
+                    "(leave blank to auto-detect domain): \x01\033[0m\x02"
+                )
+                return input(p).strip()
+            else:
+                msg = (
+                    "[bold cyan]Enter a name for this recording session "
+                    "(leave blank to auto-detect domain): [/bold cyan]"
+                )
+                return console.input(msg).strip()
+    finally:
+        if _active_listener:
+            _active_listener.resume()
 
 
-def start_cli_listeners(cancel_token: CancelToken, stop_token: StopToken) -> threading.Event | None:
+def start_cli_listeners(cancel_token: CancelToken, stop_token: StopToken) -> CLIListener | None:
     if not sys.stdin.isatty():
         return None
 
     active = threading.Event()
     active.set()
+    paused = threading.Event()
+    paused_ack = threading.Event()
 
     # Catch raw OS SIGINT to prevent KeyboardInterrupt from crashing the main thread on the first press
     try:
@@ -214,6 +354,7 @@ def start_cli_listeners(cancel_token: CancelToken, stop_token: StopToken) -> thr
             if stop_token.is_stopped():
                 # Second press: Force a hard exit
                 print("\n[ERROR] Force quit requested (Double Ctrl+C). Shutting down immediately.")
+                restore_terminal()
                 os._exit(1)
             else:
                 stop_token.stop()
@@ -249,24 +390,31 @@ def start_cli_listeners(cancel_token: CancelToken, stop_token: StopToken) -> thr
 
         def _listen():
             fd = sys.stdin.fileno()
-            old = termios.tcgetattr(fd)
-            # Remove ISIG flag so Ctrl+C (\x03) comes through as a normal char
-            new = termios.tcgetattr(fd)
-            new[3] = new[3] & ~termios.ISIG
-            termios.tcsetattr(fd, termios.TCSANOW, new)
+            global _stdin_fd, _original_termios
+            _stdin_fd = fd
+            _original_termios = termios.tcgetattr(fd)
 
-            def _restore():
-                try:
-                    termios.tcsetattr(fd, termios.TCSADRAIN, old)
-                    termios.tcflush(fd, termios.TCIFLUSH)
-                except Exception:
-                    pass
+            def _apply_cbreak_and_no_isig():
+                # Remove ISIG flag so Ctrl+C (\x03) comes through as a normal char
+                new = termios.tcgetattr(fd)
+                new[3] = new[3] & ~termios.ISIG
+                termios.tcsetattr(fd, termios.TCSANOW, new)
+                tty.setcbreak(fd)
 
-            atexit.register(_restore)
+            _apply_cbreak_and_no_isig()
+            atexit.register(restore_terminal)
 
             try:
-                tty.setcbreak(fd)
                 while active.is_set():
+                    if paused.is_set():
+                        restore_terminal()
+                        paused_ack.set()
+                        while paused.is_set() and active.is_set():
+                            time.sleep(0.05)
+                        if active.is_set():
+                            paused_ack.clear()
+                            _apply_cbreak_and_no_isig()
+
                     r, _, _ = select.select([sys.stdin], [], [], 0.05)
                     if r:
                         key = os.read(fd, 1)
@@ -276,16 +424,19 @@ def start_cli_listeners(cancel_token: CancelToken, stop_token: StopToken) -> thr
                         elif key == b"\x03":  # Ctrl+C
                             if stop_token.is_stopped():
                                 print("\n[ERROR] Force quit requested (Double Ctrl+C). Shutting down immediately.")
+                                restore_terminal()
                                 os._exit(1)
                             else:
                                 stop_token.stop()
                             termios.tcflush(fd, termios.TCIFLUSH)
             finally:
-                _restore()
+                restore_terminal()
 
     t = threading.Thread(target=_listen, daemon=True)
     t.start()
-    return active
+    global _active_listener
+    _active_listener = CLIListener(active, t, paused, paused_ack)
+    return _active_listener
 
 
 # ---------------------------------------------------------------------------
