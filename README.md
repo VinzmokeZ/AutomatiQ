@@ -79,7 +79,7 @@ automatiq agent                        # Builds an automation script from the la
 
 ## Models & Custom Endpoints
 
-AutomatiQ relies on [LiteLLM](https://github.com/BerriAI/litellm) under the hood, meaning you can easily swap the default Gemini models for OpenAI, Anthropic, or **Local LLMs** (like Ollama, LM Studio, or vLLM).
+AutomatiQ relies on [LiteLLM](https://github.com/BerriAI/litellm) under the hood, meaning you can easily swap the default Gemini models for OpenAI, Anthropic, GitHub Copilot, or **Local LLMs** (like Ollama, LM Studio, or vLLM).
 
 To change the default models on the fly, use the `--model` (for the Agent) and `--recorder-model` (for Vision compilation) flags.
 
