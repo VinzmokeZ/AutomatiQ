@@ -75,6 +75,7 @@ If you want to record multiple sessions, or run the agent later, you can split t
 ```bash
 automatiq record https://example.com   # Opens the browser and records your session
 automatiq agent                        # Builds an automation script from the last recording
+automatiq agent --target path/to/sess  # Builds an automation script from a specific recording
 ```
 
 ## Models & Custom Endpoints
@@ -114,6 +115,7 @@ automatiq run https://example.com \
 
 | Flag | Description |
 |------|-------------|
+| `--target PATH` | Path to a specific session folder to run the agent on |
 | `--model MODEL` | LiteLLM model string for the agent |
 | `--recorder-model MODEL` | Vision model for video-clip analysis |
 | `--base-url URL` | Custom OpenAI-compatible API endpoint |
