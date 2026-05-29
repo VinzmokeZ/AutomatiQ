@@ -107,3 +107,61 @@ def test_magic_view_output(sandbox: AgentSandbox):
     assert "Line 100" in out2
     assert "Line 149" in out2
     assert "Line 0" not in out2
+
+
+def test_jailed_bin_attachment(sandbox: AgentSandbox):
+    """Test if jailed_bin is properly created and attached to the sandbox environment"""
+    import os
+
+    # Execute python code to read PATH inside the sandbox
+    res_path = sandbox.execute("import os; print(os.environ.get('PATH', ''))")
+    assert "Status: Success" in res_path
+    assert ".jailed_bin" in res_path
+
+    # Check that standard commands like sh/echo/busybox are inside that .jailed_bin directory
+    jailed_bin_dir = os.path.join(sandbox.working_dir, ".jailed_bin")
+    assert os.path.isdir(jailed_bin_dir)
+
+    # Check standalone binaries exist inside jailed_bin
+    ext = ".exe" if os.name == "nt" else ""
+    assert os.path.isfile(os.path.join(jailed_bin_dir, f"rg{ext}"))
+    assert os.path.isfile(os.path.join(jailed_bin_dir, f"jq{ext}"))
+    assert os.path.isfile(os.path.join(jailed_bin_dir, f"gron{ext}"))
+
+    # If we are on Windows, check busybox commands inside jailed_bin
+    if os.name == "nt":
+        # Check if busybox commands are linked/copied
+        # For example, sh.exe or echo.exe or sed.exe
+        assert os.path.isfile(os.path.join(jailed_bin_dir, "sh.exe"))
+        assert os.path.isfile(os.path.join(jailed_bin_dir, "echo.exe"))
+
+    # Now verify that rg, jq, and gron are properly executable inside the sandbox
+    # running them should succeed and return their respective version headers.
+    res_rg = sandbox.execute("!rg --version")
+    assert "Status: Success" in res_rg
+    assert "ripgrep" in res_rg.lower()
+
+    res_jq = sandbox.execute("!jq --version")
+    assert "Status: Success" in res_jq
+    assert "jq-" in res_jq.lower() or "version" in res_jq.lower()
+
+    res_gron = sandbox.execute("!gron --version")
+    assert "Status: Success" in res_gron
+    assert "gron" in res_gron.lower()
+
+
+def test_rg_recursive_directory_search(sandbox: AgentSandbox):
+    """Test that rg can recursively search a directory successfully inside the sandbox"""
+    import os
+
+    # Create a subfolder with a file inside sandbox working directory
+    subfolder = os.path.join(sandbox.working_dir, "nested_folder")
+    os.makedirs(subfolder, exist_ok=True)
+    with open(os.path.join(subfolder, "test_file.txt"), "w") as f:
+        f.write("target_search_string_12345")
+
+    # Executing rg recursively on the directory
+    res = sandbox.execute('!rg "target_search_string_12345" nested_folder')
+    assert "Status: Success" in res
+    assert "test_file.txt" in res
+    assert "target_search_string_12345" in res

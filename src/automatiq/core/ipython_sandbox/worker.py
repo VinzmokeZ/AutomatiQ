@@ -35,7 +35,8 @@ STANDALONE_COMMANDS = ["rg", "jq", "gron"]
 
 
 def apply_path_jail(bin_dir: str, workspace: str):
-    jailed_bin = os.path.join(workspace, ".jailed_bin")
+    bin_dir = os.path.abspath(bin_dir)
+    jailed_bin = os.path.abspath(os.path.join(workspace, ".jailed_bin"))
     os.makedirs(jailed_bin, exist_ok=True)
 
     if sys.platform == "win32":
