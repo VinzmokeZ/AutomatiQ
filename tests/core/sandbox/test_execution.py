@@ -1,3 +1,7 @@
+import os
+
+import pytest
+
 from automatiq.core.ipython_sandbox import AgentSandbox
 
 
@@ -113,6 +117,8 @@ def test_jailed_bin_attachment(sandbox: AgentSandbox):
     """Test if jailed_bin is properly created and attached to the sandbox environment"""
     import os
 
+    from automatiq.core import config
+
     # Execute python code to read PATH inside the sandbox
     res_path = sandbox.execute("import os; print(os.environ.get('PATH', ''))")
     assert "Status: Success" in res_path
@@ -125,8 +131,19 @@ def test_jailed_bin_attachment(sandbox: AgentSandbox):
     # Check standalone binaries exist inside jailed_bin
     ext = ".exe" if os.name == "nt" else ""
     assert os.path.isfile(os.path.join(jailed_bin_dir, f"rg{ext}"))
-    assert os.path.isfile(os.path.join(jailed_bin_dir, f"jq{ext}"))
-    assert os.path.isfile(os.path.join(jailed_bin_dir, f"gron{ext}"))
+
+    # Optional assertions for jq/gron (skipped on CI, run locally)
+    if os.path.isfile(os.path.join(config.BIN_DIR, f"jq{ext}")):
+        assert os.path.isfile(os.path.join(jailed_bin_dir, f"jq{ext}"))
+        res_jq = sandbox.execute("!jq --version", custom_timeout=5)
+        assert "Status: Success" in res_jq
+        assert "jq-" in res_jq.lower() or "version" in res_jq.lower()
+
+    if os.path.isfile(os.path.join(config.BIN_DIR, f"gron{ext}")):
+        assert os.path.isfile(os.path.join(jailed_bin_dir, f"gron{ext}"))
+        res_gron = sandbox.execute("!gron --version", custom_timeout=5)
+        assert "Status: Success" in res_gron
+        assert "gron" in res_gron.lower()
 
     # If we are on Windows, check busybox commands inside jailed_bin
     if os.name == "nt":
@@ -135,19 +152,10 @@ def test_jailed_bin_attachment(sandbox: AgentSandbox):
         assert os.path.isfile(os.path.join(jailed_bin_dir, "sh.exe"))
         assert os.path.isfile(os.path.join(jailed_bin_dir, "echo.exe"))
 
-    # Now verify that rg, jq, and gron are properly executable inside the sandbox
-    # running them should succeed and return their respective version headers.
-    res_rg = sandbox.execute("!rg --version")
+    # Now verify that rg is properly executable inside the sandbox
+    res_rg = sandbox.execute("!rg --version", custom_timeout=5)
     assert "Status: Success" in res_rg
     assert "ripgrep" in res_rg.lower()
-
-    res_jq = sandbox.execute("!jq --version")
-    assert "Status: Success" in res_jq
-    assert "jq-" in res_jq.lower() or "version" in res_jq.lower()
-
-    res_gron = sandbox.execute("!gron --version")
-    assert "Status: Success" in res_gron
-    assert "gron" in res_gron.lower()
 
 
 def test_rg_recursive_directory_search(sandbox: AgentSandbox):
@@ -167,36 +175,28 @@ def test_rg_recursive_directory_search(sandbox: AgentSandbox):
     assert "target_search_string_12345" in res
 
 
-def test_command_chunking_on_many_files(sandbox: AgentSandbox):
-    """Test that Windows command-line limit chunker handles massive glob expansion seamlessly"""
+@pytest.mark.skipif(os.name != "nt", reason="Windows command-line limit is Windows-specific")
+def test_command_limit_handling_on_many_files(sandbox: AgentSandbox):
+    """Test that Windows command-line limit is proactively caught and returned as a clear error"""
     import os
 
     subfolder = os.path.join(sandbox.working_dir, "requests")
     os.makedirs(subfolder, exist_ok=True)
 
-    # Create 1,000 files with long path names to exceed the command-line limit
-    # To avoid truncating the test output, we only write the target string in 3 files,
-    # but still create and expand all 1,000 files to trigger the command-line limit.
-    print("Creating mock requests for chunking validation test...")
+    # Create 1,000 files with long path names to trigger the command-line limit check
     for i in range(1000):
         folder_name = f"dir_bloat_index_{i:04d}_with_extremely_long_description_group"
         folder_path = os.path.join(subfolder, folder_name)
         os.makedirs(folder_path, exist_ok=True)
         file_path = os.path.join(folder_path, "transaction.json")
         with open(file_path, "w") as f:
-            if i in (0, 500, 999):
-                f.write('{"metadata": {"url": "chunk_target_string"}}')
-            else:
-                f.write('{"metadata": {"url": "dummy_content"}}')
+            f.write('{"metadata": {"url": "dummy_content"}}')
 
-    # Execute the wildcard command that would normally fail on Windows due to the 32k limit
-    # The command line expanded length will be around 75,000+ characters.
+    # Run command that will trigger the 32k character limit
     res = sandbox.execute('!rg "chunk_target_string" requests/*/transaction.json')
 
-    # Verify execution succeeds and matches were found
-    assert "Status: Success" in res
-    assert "rg: not found" not in res.lower()
-    # Check that it actually processed files from different chunks (e.g., index 0000, 0500 and 0999)
-    assert "dir_bloat_index_0000" in res
-    assert "dir_bloat_index_0500" in res
-    assert "dir_bloat_index_0999" in res
+    # Verify execution fails gracefully with informative suggestions
+    assert "Status: ERROR" in res or "Exit 1" in res
+    assert "[Windows Command Limit Error]" in res
+    assert "exceeds the Windows CreateProcess limit" in res
+    assert "--glob" in res

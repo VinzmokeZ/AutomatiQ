@@ -325,19 +325,26 @@ def _ensure_gron(bin_dir: Path, os_name: str, arch: str, progress_callback: Call
 # ── Public API ───────────────────────────────────────────────────────────────
 
 
-def ensure_binaries(progress_callback: Callable[[int, int], None] = None) -> Path:
-    """Check and download all required binaries. Returns the bin directory path."""
+def ensure_binaries(progress_callback: Callable[[int, int], None] = None, tools: list[str] | None = None) -> Path:
+    """Check and download required binaries. Returns the bin directory path."""
     bin_dir = config.BIN_DIR
     bin_dir.mkdir(parents=True, exist_ok=True)
 
     os_name, arch = _detect_platform()
 
-    _ensure_busybox(bin_dir, os_name, arch, progress_callback)
-    _ensure_rg(bin_dir, os_name, arch, progress_callback)
-    _ensure_jq(bin_dir, os_name, arch, progress_callback)
-    _ensure_gron(bin_dir, os_name, arch, progress_callback)
+    if tools is None:
+        tools = ["busybox", "rg", "jq", "gron"] if os_name == "windows" else ["rg", "jq", "gron"]
 
-    if os_name == "windows":
+    if "busybox" in tools and os_name == "windows":
+        _ensure_busybox(bin_dir, os_name, arch, progress_callback)
+    if "rg" in tools:
+        _ensure_rg(bin_dir, os_name, arch, progress_callback)
+    if "jq" in tools:
+        _ensure_jq(bin_dir, os_name, arch, progress_callback)
+    if "gron" in tools:
+        _ensure_gron(bin_dir, os_name, arch, progress_callback)
+
+    if os_name == "windows" and "busybox" in tools:
         bb = bin_dir / "busybox.exe"
         if not bb.exists() and not shutil.which("busybox"):
             logger.error("busybox is required on Windows but was not found.")
@@ -346,11 +353,13 @@ def ensure_binaries(progress_callback: Callable[[int, int], None] = None) -> Pat
             sys.exit(1)
 
     # Only report missing tools; stay silent when everything is fine.
-    tools = ["busybox", "rg", "jq", "gron"] if os_name == "windows" else ["rg", "jq", "gron"]
-    missing = [t for t in tools if not (bin_dir / _exe(t)).exists() and not shutil.which(t)]
+    missing = []
+    for tool in tools:
+        if not (bin_dir / _exe(tool)).exists() and not shutil.which(tool):
+            missing.append(tool)
+
     if missing:
-        logger.warning(f"Missing binaries: {', '.join(missing)}")
-    else:
-        logger.info("Sandbox binaries ready.")
+        logger.warning(f"Failed to install/find: {', '.join(missing)}")
+        logger.warning(f"Make sure they exist in PATH or {bin_dir}")
 
     return bin_dir

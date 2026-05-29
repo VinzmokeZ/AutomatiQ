@@ -23,6 +23,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Cache AutomatiQ Binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.automatiq/bin
+          key: ${{ runner.os }}-automatiq-bin-rg-v1-${{ hashFiles('src/automatiq/core/bin_manager.py') }}
+          restore-keys: |
+            ${{ runner.os }}-automatiq-bin-rg-v1-
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
