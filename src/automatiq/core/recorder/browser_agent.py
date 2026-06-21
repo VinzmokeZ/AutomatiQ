@@ -54,18 +54,23 @@ class BrowserAgent:
         self.visuals_js_path = visuals_js_path or os.path.join(_js_dir, "visuals.js")
         self.blocklist = blocklist
         self._profile_dir = tempfile.TemporaryDirectory(prefix="automatiq_chrome_")
+
+        # New Disk-Streaming Setup
+        self._data_dir = tempfile.TemporaryDirectory(prefix="automatiq_stream_")
+        self._bodies_dir = os.path.join(self._data_dir.name, "bodies")
+        os.makedirs(self._bodies_dir, exist_ok=True)
+        self._actions_file = open(os.path.join(self._data_dir.name, "actions.jsonl"), "a", encoding="utf-8")
+        self._requests_file = open(os.path.join(self._data_dir.name, "requests.jsonl"), "a", encoding="utf-8")
+        self._actions_count = 0
+
         self.browser = None
         self.tab = None
         self.recording_start = None
 
         self.ts_converter = TimestampConverter()
 
-        self.captured_requests = []
-        self.captured_actions = []
         self.active_map = {}
         self.orphan_extra_info = {}
-
-        self._streamed_bodies: dict[str, list[bytes]] = {}
 
         # FIX: Central Tab Registry
         self.tabs = {}  # session_id -> {"tab": tab_session, "type": "page"|"iframe"}
@@ -140,7 +145,10 @@ class BrowserAgent:
                         )
                     return
 
-                self.captured_actions.append(payload)
+                # Stream to disk instead of memory
+                self._actions_file.write(json.dumps(payload) + "\n")
+                self._actions_file.flush()
+                self._actions_count += 1
 
                 tag = " (IFRAME)" if is_iframe else ""
 
@@ -213,16 +221,18 @@ class BrowserAgent:
             self.stats["blocked_by_blocklist"] += 1
             return
 
-        self.captured_requests.append(request_obj)
         self.active_map[event.request_id] = request_obj
 
     async def data_received_handler_for_tab(self, event: cdp.network.DataReceived, session_id: str):
         rid = str(event.request_id)
-        if rid in self._streamed_bodies and event.data:
+        # We write raw chunks directly to the body file
+        if event.data:
             try:
-                self._streamed_bodies[rid].append(base64.b64decode(event.data))
+                body_path = os.path.join(self._bodies_dir, f"{rid}.bin")
+                with open(body_path, "ab") as f:
+                    f.write(base64.b64decode(event.data))
             except Exception as exc:
-                events.log_error.send("recorder", text=f"Failed to decode chunk {rid}: {exc}")
+                events.log_error.send("recorder", text=f"Failed to decode/write chunk {rid}: {exc}")
                 events.log_traceback.send("recorder")
 
     async def response_handler_for_tab(self, event: cdp.network.ResponseReceived, session_id: str):
@@ -256,14 +266,18 @@ class BrowserAgent:
             self.merge_headers(req, resp.get("headers", {}))
 
             rid = str(event.request_id)
-            self._streamed_bodies[rid] = []
+            body_path = os.path.join(self._bodies_dir, f"{rid}.bin")
+            # Ensure an empty file exists so we know we tracked it
+            if not os.path.exists(body_path):
+                open(body_path, "a").close()
 
             tab_session = self.tabs.get(session_id, {}).get("tab")
             if tab_session:
                 try:
                     buffered = await tab_session.send(cdp.network.stream_resource_content(request_id=event.request_id))
                     if buffered:
-                        self._streamed_bodies[rid].append(base64.b64decode(buffered))
+                        with open(body_path, "ab") as f:
+                            f.write(base64.b64decode(buffered))
                 except Exception as e:
                     error_str = str(e)
                     if "already finished loading" not in error_str and "does not exist" not in error_str:
@@ -287,15 +301,28 @@ class BrowserAgent:
             else:
                 body_captured = False
                 tab_session = self.tabs.get(session_id, {}).get("tab")
+                rid = str(event.request_id)
+                body_path = os.path.join(self._bodies_dir, f"{rid}.bin")
 
                 if tab_session:
                     try:
                         result = await tab_session.send(cdp.network.get_response_body(request_id=event.request_id))
+                        raw_bytes = None
                         if isinstance(result, tuple):
-                            req["response_data"]["body"], req["response_data"]["base64_encoded"] = result
+                            body_str, is_base64 = result
                         else:
-                            req["response_data"]["body"] = result.body
-                            req["response_data"]["base64_encoded"] = result.base64_encoded
+                            body_str = result.body
+                            is_base64 = result.base64_encoded
+
+                        if is_base64:
+                            raw_bytes = base64.b64decode(body_str)
+                        else:
+                            raw_bytes = body_str.encode("utf-8")
+
+                        with open(body_path, "wb") as f:
+                            f.write(raw_bytes)
+
+                        req["response_data"]["body_file"] = f"bodies/{rid}.bin"
                         self.stats["body_success"] += 1
                         body_captured = True
                     except Exception as e:
@@ -303,11 +330,8 @@ class BrowserAgent:
                         # We won't log traceback for this one as get_response_body
                         # often fails for valid reasons (cache eviction)
 
-                rid = str(event.request_id)
-                if not body_captured and rid in self._streamed_bodies and self._streamed_bodies[rid]:
-                    raw = b"".join(self._streamed_bodies[rid])
-                    req["response_data"]["body"] = base64.b64encode(raw).decode("ascii")
-                    req["response_data"]["base64_encoded"] = True
+                if not body_captured and os.path.exists(body_path) and os.path.getsize(body_path) > 0:
+                    req["response_data"]["body_file"] = f"bodies/{rid}.bin"
                     req["body_fetch_error"] = None
                     self.stats["body_from_stream"] += 1
                     body_captured = True
@@ -315,7 +339,9 @@ class BrowserAgent:
                 if not body_captured:
                     self.stats["body_failed"] += 1
 
-            self._streamed_bodies.pop(str(event.request_id), None)
+            # Stream request to disk and remove from memory
+            self._requests_file.write(json.dumps(req) + "\n")
+            self._requests_file.flush()
             self.active_map.pop(event.request_id, None)
 
     async def loading_failed_handler_for_tab(self, event: cdp.network.LoadingFailed, session_id: str):
@@ -324,7 +350,10 @@ class BrowserAgent:
             req["request_state"] = "failed"
             req["error_text"] = event.error_text
             self.stats["failed"] += 1
-            self._streamed_bodies.pop(str(event.request_id), None)
+
+            # Stream request to disk and remove from memory
+            self._requests_file.write(json.dumps(req) + "\n")
+            self._requests_file.flush()
             self.active_map.pop(event.request_id, None)
 
     async def req_extra_info_for_tab(self, event: cdp.network.RequestWillBeSentExtraInfo, session_id: str):
@@ -585,6 +614,17 @@ class BrowserAgent:
             for req in self.active_map.values():
                 req["request_state"] = "incomplete"
                 self.stats["incomplete"] += 1
+                self._requests_file.write(json.dumps(req) + "\n")
+            self._requests_file.flush()
+            self.active_map.clear()
+
+        # Close stream files
+        try:
+            self._actions_file.close()
+            self._requests_file.close()
+        except Exception as e:
+            events.log_error.send("recorder", text=f"Failed to close stream files: {e}")
+            events.log_traceback.send("recorder")
 
         if self.tab:
             self.tab.remove_handlers()
@@ -611,30 +651,32 @@ class BrowserAgent:
 
         duration = (datetime.now(UTC) - self.recording_start).total_seconds() if self.recording_start else 0.0
 
-        return {
-            "metadata": {
-                "recording_started": self.recording_start.isoformat(timespec="milliseconds")
-                if self.recording_start
-                else None,
-                "recording_ended": datetime.now(UTC).isoformat(timespec="milliseconds"),
-                "duration_seconds": round(duration, 2),
-                "total_requests": self.stats["total_requests"],
-                "completed_requests": self.stats["completed"],
-                "failed_requests": self.stats["failed"],
-                "incomplete_requests": self.stats["incomplete"],
-                "total_actions": len(self.captured_actions),
-                "blocked_by_blocklist": self.stats["blocked_by_blocklist"],
-                "timestamp_format": "ISO 8601 (YYYY-MM-DDTHH:MM:SS.sssZ)",
-                "timezone": "UTC",
-                "body_capture_stats": {
-                    "success": self.stats["body_success"],
-                    "from_stream": self.stats["body_from_stream"],
-                    "failed": self.stats["body_failed"],
-                    "skip_redirect": self.stats["body_skip_redirect"],
-                    "skip_no_content": self.stats["body_skip_no_content"],
-                    "skip_cached": self.stats["body_skip_cached"],
-                },
+        metadata = {
+            "recording_started": self.recording_start.isoformat(timespec="milliseconds")
+            if self.recording_start
+            else None,
+            "recording_ended": datetime.now(UTC).isoformat(timespec="milliseconds"),
+            "duration_seconds": round(duration, 2),
+            "total_requests": self.stats["total_requests"],
+            "completed_requests": self.stats["completed"],
+            "failed_requests": self.stats["failed"],
+            "incomplete_requests": self.stats["incomplete"],
+            "total_actions": self._actions_count,
+            "blocked_by_blocklist": self.stats["blocked_by_blocklist"],
+            "timestamp_format": "ISO 8601 (YYYY-MM-DDTHH:MM:SS.sssZ)",
+            "timezone": "UTC",
+            "body_capture_stats": {
+                "success": self.stats["body_success"],
+                "from_stream": self.stats["body_from_stream"],
+                "failed": self.stats["body_failed"],
+                "skip_redirect": self.stats["body_skip_redirect"],
+                "skip_no_content": self.stats["body_skip_no_content"],
+                "skip_cached": self.stats["body_skip_cached"],
             },
-            "requests": self.captured_requests,
-            "actions": self.captured_actions,
         }
+
+        # Write metadata to the temp directory
+        with open(os.path.join(self._data_dir.name, "metadata.json"), "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        return self._data_dir.name
