@@ -68,14 +68,24 @@ def run_recording(
     events.log_info.send("recorder", text=f"Target URL : {url}")
     events.log_info.send("recorder", text=f"AI Model   : {config.RECORDER_AI_MODEL}")
     events.log_info.send("recorder", text=f"Blocklist  : {blocklist.total_enabled_domains()} domains loaded")
-    events.log_info.send("recorder", text="Press Ctrl+C to stop recording")
 
     temp_data_dir = None
     success = False
 
     try:
         _video_recorder.start()
-        temp_data_dir = asyncio.run(_browser_agent.run_session(url=url, stop_token=stop_token))
+
+        # We start the browser agent in the background loop but we need to hold
+        # the main thread to show the spinner. asyncio.run() blocks.
+        from ...cli.console import console
+
+        with console.status(
+            "[dim red]Recording Active 🔴 Press Ctrl+C to stop and save recording[/dim red]",
+            spinner="bouncingBar",
+            spinner_style="red",
+        ):
+            temp_data_dir = asyncio.run(_browser_agent.run_session(url=url, stop_token=stop_token))
+
     except KeyboardInterrupt:
         events.log_warn.send("recorder", text="KeyboardInterrupt caught in run_recording.")
         if stop_token:
